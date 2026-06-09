@@ -52,6 +52,23 @@
             background: linear-gradient(135deg, #1e293b, #334155);
             font-size: 4rem;
         }
+        .debug-log {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            font-family: monospace;
+            font-size: 0.75rem;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .debug-log p {
+            margin: 0.25rem 0;
+            color: #94a3b8;
+        }
+        .debug-log .error { color: #ef4444; }
+        .debug-log .success { color: #10b981; }
+        .debug-log .info { color: #3b82f6; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col items-center justify-center p-4">
@@ -99,6 +116,11 @@
             </div>
 
             <div id="statusMessage" class="text-center text-sm text-slate-400">Инициализация...</div>
+            
+            <!-- Лог для диагностики -->
+            <div class="debug-log hidden" id="debugLog">
+                <p class="info">📋 Лог подключений:</p>
+            </div>
         </div>
 
         <div class="video-container glass-panel hidden" id="videoContainer">
@@ -121,9 +143,9 @@
         </div>
 
         <div class="flex justify-center gap-4 hidden" id="controls">
-            <button onclick="toggleMic()" id="micBtn" class="control-btn w-14 h-14 rounded-full bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-white"></button>
+            <button onclick="toggleMic()" id="micBtn" class="control-btn w-14 h-14 rounded-full bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-white">🎤</button>
             <button onclick="toggleCamera()" id="camBtn" class="control-btn w-14 h-14 rounded-full bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-white hidden">📷</button>
-            <button onclick="endCall()" class="control-btn w-14 h-14 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center text-white"></button>
+            <button onclick="endCall()" class="control-btn w-14 h-14 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center text-white">📴</button>
         </div>
     </div>
 
@@ -145,8 +167,21 @@
         const callingOverlay = document.getElementById('callingOverlay');
         const audioOnlyPlaceholder = document.getElementById('audioOnlyPlaceholder');
         const camBtn = document.getElementById('camBtn');
+        const debugLog = document.getElementById('debugLog');
+
+        function log(message, type = 'info') {
+            debugLog.classList.remove('hidden');
+            const p = document.createElement('p');
+            p.className = type;
+            const time = new Date().toLocaleTimeString();
+            p.textContent = `[${time}] ${message}`;
+            debugLog.appendChild(p);
+            debugLog.scrollTop = debugLog.scrollHeight;
+            console.log(`[${type}] ${message}`);
+        }
 
         function initPeer() {
+            log('Инициализация PeerJS...', 'info');
             statusMessage.textContent = 'Подключение к серверу...';
             
             try {
@@ -155,42 +190,64 @@
                     port: 443,
                     path: '/peerjs',
                     secure: true,
-                    debug: 2,
+                    debug: 3,
                     config: {
                         iceServers: [
                             { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' },
                             { urls: 'stun:stun.cloudflare.com:3478' }
                         ]
                     }
                 });
 
-                peer.on('open', (id) => {
+                peer.on('open', function(id) {
+                    log('ID получен: ' + id, 'success');
                     myIdInput.value = id;
                     statusMessage.textContent = '✅ Готово! Скопируйте ваш ID и отправьте другу.';
                     statusMessage.className = 'text-center text-sm text-emerald-400 font-medium';
                 });
 
-                peer.on('call', (call) => {
+                peer.on('call', function(call) {
+                    log('Входящий звонок от: ' + call.peer, 'info');
                     if (confirm('Входящий звонок. Принять?')) {
                         answerCall(call);
                     } else {
                         call.close();
+                        log('Звонок отклонён', 'info');
                     }
                 });
 
-                peer.on('error', (err) => {
-                    console.error('PeerJS error:', err);
-                    statusMessage.textContent = '❌ Ошибка подключения. Обновите страницу.';
+                peer.on('error', function(err) {
+                    log('Ошибка PeerJS: ' + err.type + ' - ' + err.message, 'error');
+                    statusMessage.textContent = '❌ Ошибка: ' + err.type;
                     statusMessage.className = 'text-center text-sm text-red-400';
+                    
+                    if (err.type === 'unavailable-id') {
+                        log('ID уже используется. Попробуйте обновить страницу.', 'error');
+                    } else if (err.type === 'network') {
+                        log('Сетевая ошибка. Проверьте подключение к серверу.', 'error');
+                        log('Откройте https://peerjs-server-n709.onrender.com чтобы "разбудить" сервер', 'info');
+                    }
                 });
+
+                peer.on('disconnected', function() {
+                    log('Отключено от сервера. Переподключение...', 'error');
+                    peer.reconnect();
+                });
+
+                peer.on('connection', function(conn) {
+                    log('Установлено соединение с: ' + conn.peer, 'success');
+                });
+
             } catch (e) {
-                console.error('Init error:', e);
-                statusMessage.textContent = ' Ошибка инициализации';
+                log('Критическая ошибка: ' + e.message, 'error');
+                statusMessage.textContent = '❌ Ошибка инициализации: ' + e.message;
             }
         }
 
         async function requestCamera() {
             try {
+                log('Запрос доступа к камере и микрофону...', 'info');
                 statusMessage.textContent = 'Запрос доступа к камере...';
                 localStream = await navigator.mediaDevices.getUserMedia({ 
                     video: true, 
@@ -201,11 +258,12 @@
                 localVideo.classList.remove('hidden');
                 audioOnlyPlaceholder.classList.add('hidden');
                 camBtn.classList.remove('hidden');
+                log('Камера и микрофон подключены', 'success');
                 statusMessage.textContent = '✅ Камера и микрофон подключены';
                 statusMessage.className = 'text-center text-sm text-emerald-400';
                 return true;
             } catch (err) {
-                console.error('Camera error:', err);
+                log('Ошибка камеры: ' + err.message, 'error');
                 statusMessage.textContent = '⚠️ Камера недоступна. Попробуйте "Только микрофон"';
                 statusMessage.className = 'text-center text-sm text-yellow-400';
                 return requestAudioOnly();
@@ -214,6 +272,7 @@
 
         async function requestAudioOnly() {
             try {
+                log('Запрос доступа к микрофону...', 'info');
                 statusMessage.textContent = 'Запрос доступа к микрофону...';
                 localStream = await navigator.mediaDevices.getUserMedia({ 
                     video: false, 
@@ -223,11 +282,12 @@
                 localVideo.classList.add('hidden');
                 audioOnlyPlaceholder.classList.remove('hidden');
                 camBtn.classList.add('hidden');
+                log('Микрофон подключен', 'success');
                 statusMessage.textContent = '✅ Микрофон подключен (аудиозвонок)';
                 statusMessage.className = 'text-center text-sm text-emerald-400';
                 return true;
             } catch (err) {
-                console.error('Audio error:', err);
+                log('Ошибка микрофона: ' + err.message, 'error');
                 statusMessage.textContent = '❌ Микрофон недоступен. Проверьте разрешения.';
                 statusMessage.className = 'text-center text-sm text-red-400';
                 return false;
@@ -244,7 +304,12 @@
                 alert('Сначала нажмите "Видео + Микрофон" или "Только микрофон"!');
                 return;
             }
+            if (!peer) {
+                alert('PeerJS не инициализирован. Обновите страницу.');
+                return;
+            }
 
+            log('Начало звонка на: ' + remoteId, 'info');
             statusMessage.textContent = 'Установка соединения...';
             callingOverlay.classList.remove('hidden');
             videoContainer.classList.remove('hidden');
@@ -255,8 +320,9 @@
         }
 
         function answerCall(call) {
+            log('Ответ на звонок от: ' + call.peer, 'info');
             if (!localStream) {
-                requestAudioOnly().then(() => {
+                requestAudioOnly().then(function() {
                     if(localStream) {
                         videoContainer.classList.remove('hidden');
                         controls.classList.remove('hidden');
@@ -276,21 +342,27 @@
         }
 
         function handleCall(call) {
-            call.on('stream', (remoteStream) => {
+            call.on('stream', function(remoteStream) {
+                log('Получен видеопоток от собеседника', 'success');
                 remoteVideo.srcObject = remoteStream;
                 callingOverlay.classList.add('hidden');
-                statusMessage.textContent = ' Звонок активен';
+                statusMessage.textContent = '🟢 Звонок активен';
                 statusMessage.className = 'text-center text-sm text-emerald-400 font-bold';
             });
 
-            call.on('close', () => endCallUI());
-            call.on('error', (err) => {
-                console.error('Call error:', err);
+            call.on('close', function() { 
+                log('Звонок завершён', 'info');
+                endCallUI(); 
+            });
+            
+            call.on('error', function(err) {
+                log('Ошибка звонка: ' + err, 'error');
                 endCallUI();
             });
         }
 
         function endCall() {
+            log('Завершение звонка', 'info');
             if (currentCall) {
                 currentCall.close();
                 currentCall = null;
@@ -311,45 +383,50 @@
         function toggleMic() {
             if (!localStream) return;
             isMicMuted = !isMicMuted;
-            localStream.getAudioTracks().forEach(track => track.enabled = !isMicMuted);
+            localStream.getAudioTracks().forEach(function(track) { track.enabled = !isMicMuted; });
             const btn = document.getElementById('micBtn');
-            btn.textContent = isMicMuted ? '' : '🎤';
+            btn.textContent = isMicMuted ? '🔇' : '🎤';
             btn.classList.toggle('bg-red-600', isMicMuted);
             btn.classList.toggle('bg-slate-700', !isMicMuted);
+            log(isMicMuted ? 'Микрофон выключен' : 'Микрофон включён', 'info');
         }
 
         function toggleCamera() {
             if (!localStream || !hasVideo) return;
             isCamMuted = !isCamMuted;
-            localStream.getVideoTracks().forEach(track => track.enabled = !isCamMuted);
+            localStream.getVideoTracks().forEach(function(track) { track.enabled = !isCamMuted; });
             const btn = document.getElementById('camBtn');
             btn.textContent = isCamMuted ? '📷' : '';
             btn.classList.toggle('bg-red-600', isCamMuted);
             btn.classList.toggle('bg-slate-700', !isCamMuted);
             localVideo.classList.toggle('hidden', isCamMuted);
             audioOnlyPlaceholder.classList.toggle('hidden', !isCamMuted);
+            log(isCamMuted ? 'Камера выключена' : 'Камера включена', 'info');
         }
 
         function copyId() {
             const id = myIdInput.value;
             if (id && id !== 'Загрузка...') {
-                navigator.clipboard.writeText(id).then(() => {
+                navigator.clipboard.writeText(id).then(function() {
+                    log('ID скопирован', 'success');
                     const orig = statusMessage.textContent;
                     statusMessage.textContent = '✅ ID скопирован!';
-                    setTimeout(() => statusMessage.textContent = orig, 2000);
+                    setTimeout(function() { statusMessage.textContent = orig; }, 2000);
                 });
             }
         }
 
-        window.addEventListener('load', () => {
+        window.addEventListener('load', function() {
+            log('Страница загружена', 'info');
             initPeer();
             requestCamera();
         });
 
-        window.addEventListener('beforeunload', () => {
-            if (localStream) localStream.getTracks().forEach(t => t.stop());
+        window.addEventListener('beforeunload', function() {
+            if (localStream) localStream.getTracks().forEach(function(t) { t.stop(); });
             if (peer) peer.destroy();
         });
     </script>
 </body>
 </html>
+
