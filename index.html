@@ -1,1 +1,312 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Видеозвонки - Без ограничений</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            color: #f8fafc;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .video-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #000;
+            border-radius: 1rem;
+            overflow: hidden;
+        }
+        .remote-video { width: 100%; height: 100%; object-fit: cover; }
+        .local-video {
+            position: absolute; bottom: 1rem; right: 1rem;
+            width: 120px; height: 120px; object-fit: cover;
+            border-radius: 0.75rem; border: 2px solid rgba(255, 255, 255, 0.2);
+            background: #334155; z-index: 10;
+        }
+        @media (max-width: 640px) {
+            .local-video { width: 80px; height: 80px; }
+        }
+        .control-btn { transition: all 0.2s ease; }
+        .control-btn:hover { transform: scale(1.05); }
+        .pulse-ring { animation: pulse-ring 2s infinite; }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
+
+    <div class="w-full max-w-4xl space-y-6">
+        <div class="text-center space-y-2">
+            <h1 class="text-3xl md:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">
+                Видеозвонки
+            </h1>
+            <p class="text-slate-400 text-sm">Без регистрации и ограничений по времени</p>
+        </div>
+
+        <div class="glass-panel rounded-2xl p-6 space-y-4">
+            <div class="flex flex-col md:flex-row gap-4">
+                <div class="flex-1">
+                    <label class="block text-xs font-medium text-slate-400 mb-1 uppercase">Ваш ID</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="myId" readonly 
+                            class="flex-1 bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 font-mono text-sm"
+                            value="Загрузка...">
+                        <button onclick="copyId()" class="p-2.5 bg-slate-700 hover:bg-slate-600 rounded-lg">
+                            📋
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="flex-1">
+                    <label class="block text-xs font-medium text-slate-400 mb-1 uppercase">ID собеседника</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="remoteId" placeholder="Вставьте ID друга" 
+                            class="flex-1 bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 placeholder-slate-500">
+                        <button onclick="startCall()" 
+                            class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg">
+                            📞 Позвонить
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <button id="requestCamBtn" onclick="requestCamera()" class="hidden w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg">
+                📷 Разрешить доступ к камере
+            </button>
+
+            <div id="statusMessage" class="text-center text-sm text-slate-400">Инициализация...</div>
+        </div>
+
+        <div class="video-container glass-panel hidden" id="videoContainer">
+            <video id="remoteVideo" class="remote-video" autoplay playsinline></video>
+            <video id="localVideo" class="local-video" autoplay playsinline muted></video>
+            
+            <div id="callingOverlay" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/80 backdrop-blur-sm z-20 hidden">
+                <div class="w-20 h-20 rounded-full bg-emerald-500/20 flex items-center justify-center mb-4 pulse-ring">
+                    <svg class="w-10 h-10 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+                </div>
+                <p class="text-xl font-semibold text-white">Вызов...</p>
+            </div>
+        </div>
+
+        <div class="flex justify-center gap-4 hidden" id="controls">
+            <button onclick="toggleMic()" id="micBtn" class="control-btn w-14 h-14 rounded-full bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-white">
+                
+            </button>
+            <button onclick="toggleCamera()" id="camBtn" class="control-btn w-14 h-14 rounded-full bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-white">
+                
+            </button>
+            <button onclick="endCall()" class="control-btn w-14 h-14 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center text-white">
+                📴
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let peer = null;
+        let localStream = null;
+        let currentCall = null;
+        let isMicMuted = false;
+        let isCamMuted = false;
+
+        const myIdInput = document.getElementById('myId');
+        const remoteIdInput = document.getElementById('remoteId');
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const statusMessage = document.getElementById('statusMessage');
+        const videoContainer = document.getElementById('videoContainer');
+        const controls = document.getElementById('controls');
+        const callingOverlay = document.getElementById('callingOverlay');
+        const requestCamBtn = document.getElementById('requestCamBtn');
+
+        function initPeer() {
+            statusMessage.textContent = 'Подключение к серверу...';
+            
+            try {
+                peer = new Peer({
+                    debug: 2,
+                    config: {
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' }
+                        ]
+                    }
+                });
+
+                peer.on('open', (id) => {
+                    myIdInput.value = id;
+                    statusMessage.textContent = '✅ Готово! Скопируйте ваш ID и отправьте другу.';
+                    statusMessage.className = 'text-center text-sm text-emerald-400 font-medium';
+                });
+
+                peer.on('call', (call) => {
+                    if (confirm('Входящий видеозвонок. Принять?')) {
+                        answerCall(call);
+                    } else {
+                        call.close();
+                    }
+                });
+
+                peer.on('error', (err) => {
+                    console.error('PeerJS error:', err);
+                    statusMessage.textContent = '❌ Ошибка подключения. Обновите страницу.';
+                    statusMessage.className = 'text-center text-sm text-red-400';
+                });
+            } catch (e) {
+                console.error('Init error:', e);
+                statusMessage.textContent = '❌ Ошибка инициализации';
+            }
+        }
+
+        async function requestCamera() {
+            try {
+                statusMessage.textContent = 'Запрос доступа к камере...';
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: true, 
+                    audio: true 
+                });
+                localVideo.srcObject = localStream;
+                requestCamBtn.classList.add('hidden');
+                statusMessage.textContent = '✅ Камера подключена';
+                statusMessage.className = 'text-center text-sm text-emerald-400';
+                return true;
+            } catch (err) {
+                console.error('Camera error:', err);
+                statusMessage.textContent = ' Доступ к камере запрещен';
+                statusMessage.className = 'text-center text-sm text-red-400';
+                return false;
+            }
+        }
+
+        function startCall() {
+            const remoteId = remoteIdInput.value.trim();
+            if (!remoteId) {
+                alert('Введите ID собеседника');
+                return;
+            }
+            if (!localStream) {
+                alert('Сначала разрешите доступ к камере!');
+                requestCamera();
+                return;
+            }
+
+            statusMessage.textContent = 'Установка соединения...';
+            callingOverlay.classList.remove('hidden');
+            videoContainer.classList.remove('hidden');
+            controls.classList.remove('hidden');
+
+            currentCall = peer.call(remoteId, localStream);
+            handleCall(currentCall);
+        }
+
+        function answerCall(call) {
+            if (!localStream) {
+                requestCamera().then(() => {
+                    if(localStream) {
+                        videoContainer.classList.remove('hidden');
+                        controls.classList.remove('hidden');
+                        currentCall = call;
+                        call.answer(localStream);
+                        handleCall(call);
+                    }
+                });
+                return;
+            }
+            
+            videoContainer.classList.remove('hidden');
+            controls.classList.remove('hidden');
+            currentCall = call;
+            call.answer(localStream);
+            handleCall(call);
+        }
+
+        function handleCall(call) {
+            call.on('stream', (remoteStream) => {
+                remoteVideo.srcObject = remoteStream;
+                callingOverlay.classList.add('hidden');
+                statusMessage.textContent = '🟢 Звонок активен';
+                statusMessage.className = 'text-center text-sm text-emerald-400 font-bold';
+            });
+
+            call.on('close', () => endCallUI());
+            call.on('error', (err) => {
+                console.error('Call error:', err);
+                endCallUI();
+            });
+        }
+
+        function endCall() {
+            if (currentCall) {
+                currentCall.close();
+                currentCall = null;
+            }
+            endCallUI();
+        }
+
+        function endCallUI() {
+            remoteVideo.srcObject = null;
+            videoContainer.classList.add('hidden');
+            controls.classList.add('hidden');
+            callingOverlay.classList.add('hidden');
+            statusMessage.textContent = 'Звонок завершен';
+            statusMessage.className = 'text-center text-sm text-slate-400';
+            remoteIdInput.value = '';
+        }
+
+        function toggleMic() {
+            if (!localStream) return;
+            isMicMuted = !isMicMuted;
+            localStream.getAudioTracks().forEach(track => track.enabled = !isMicMuted);
+            const btn = document.getElementById('micBtn');
+            btn.textContent = isMicMuted ? '🔇' : '🎤';
+            btn.classList.toggle('bg-red-600', isMicMuted);
+            btn.classList.toggle('bg-slate-700', !isMicMuted);
+        }
+
+        function toggleCamera() {
+            if (!localStream) return;
+            isCamMuted = !isCamMuted;
+            localStream.getVideoTracks().forEach(track => track.enabled = !isCamMuted);
+            const btn = document.getElementById('camBtn');
+            btn.textContent = isCamMuted ? '📷' : '';
+            btn.classList.toggle('bg-red-600', isCamMuted);
+            btn.classList.toggle('bg-slate-700', !isCamMuted);
+        }
+
+        function copyId() {
+            const id = myIdInput.value;
+            if (id && id !== 'Загрузка...') {
+                navigator.clipboard.writeText(id).then(() => {
+                    const orig = statusMessage.textContent;
+                    statusMessage.textContent = '✅ ID скопирован!';
+                    setTimeout(() => statusMessage.textContent = orig, 2000);
+                });
+            }
+        }
+
+        window.addEventListener('load', () => {
+            initPeer();
+            requestCamera();
+        });
+
+        window.addEventListener('beforeunload', () => {
+            if (localStream) localStream.getTracks().forEach(t => t.stop());
+            if (peer) peer.destroy();
+        });
+    </script>
+</body>
+</html>
+
 
