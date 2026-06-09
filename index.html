@@ -89,7 +89,6 @@
                 </div>
             </div>
             
-            <!-- Кнопки доступа -->
             <div class="flex flex-col sm:flex-row gap-2">
                 <button onclick="requestCamera()" class="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg transition">
                     📷 Видео + Микрофон
@@ -106,7 +105,6 @@
             <video id="remoteVideo" class="remote-video" autoplay playsinline></video>
             <video id="localVideo" class="local-video hidden" autoplay playsinline muted></video>
             
-            <!-- Заглушка когда нет камеры -->
             <div id="audioOnlyPlaceholder" class="audio-only-placeholder hidden">
                 <div class="text-center">
                     <div class="text-6xl mb-2">🎤</div>
@@ -123,9 +121,9 @@
         </div>
 
         <div class="flex justify-center gap-4 hidden" id="controls">
-            <button onclick="toggleMic()" id="micBtn" class="control-btn w-14 h-14 rounded-full bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-white">🎤</button>
+            <button onclick="toggleMic()" id="micBtn" class="control-btn w-14 h-14 rounded-full bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-white"></button>
             <button onclick="toggleCamera()" id="camBtn" class="control-btn w-14 h-14 rounded-full bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-white hidden">📷</button>
-            <button onclick="endCall()" class="control-btn w-14 h-14 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center text-white">📴</button>
+            <button onclick="endCall()" class="control-btn w-14 h-14 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center text-white"></button>
         </div>
     </div>
 
@@ -148,24 +146,23 @@
         const audioOnlyPlaceholder = document.getElementById('audioOnlyPlaceholder');
         const camBtn = document.getElementById('camBtn');
 
-        // Инициализация PeerJS с несколькими серверами для РФ
         function initPeer() {
             statusMessage.textContent = 'Подключение к серверу...';
             
             try {
                 peer = new Peer({
-    host: 'peerjs-server-n709.onrender.com',
-    port: 443,
-    path: '/peerjs',
-    secure: true,
-    debug: 2,
-    config: {
-        iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun.cloudflare.com:3478' }
-        ]
-    }
-});
+                    host: 'peerjs-server-n709.onrender.com',
+                    port: 443,
+                    path: '/peerjs',
+                    secure: true,
+                    debug: 2,
+                    config: {
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun.cloudflare.com:3478' }
+                        ]
+                    }
+                });
 
                 peer.on('open', (id) => {
                     myIdInput.value = id;
@@ -188,11 +185,10 @@
                 });
             } catch (e) {
                 console.error('Init error:', e);
-                statusMessage.textContent = '❌ Ошибка инициализации';
+                statusMessage.textContent = ' Ошибка инициализации';
             }
         }
 
-        // Видео + аудио
         async function requestCamera() {
             try {
                 statusMessage.textContent = 'Запрос доступа к камере...';
@@ -212,12 +208,10 @@
                 console.error('Camera error:', err);
                 statusMessage.textContent = '⚠️ Камера недоступна. Попробуйте "Только микрофон"';
                 statusMessage.className = 'text-center text-sm text-yellow-400';
-                // Автоматически пробуем только аудио
                 return requestAudioOnly();
             }
         }
 
-        // Только аудио (без камеры)
         async function requestAudioOnly() {
             try {
                 statusMessage.textContent = 'Запрос доступа к микрофону...';
@@ -234,7 +228,7 @@
                 return true;
             } catch (err) {
                 console.error('Audio error:', err);
-                statusMessage.textContent = ' Микрофон недоступен. Проверьте разрешения.';
+                statusMessage.textContent = '❌ Микрофон недоступен. Проверьте разрешения.';
                 statusMessage.className = 'text-center text-sm text-red-400';
                 return false;
             }
@@ -285,7 +279,7 @@
             call.on('stream', (remoteStream) => {
                 remoteVideo.srcObject = remoteStream;
                 callingOverlay.classList.add('hidden');
-                statusMessage.textContent = '🟢 Звонок активен';
+                statusMessage.textContent = ' Звонок активен';
                 statusMessage.className = 'text-center text-sm text-emerald-400 font-bold';
             });
 
@@ -319,7 +313,7 @@
             isMicMuted = !isMicMuted;
             localStream.getAudioTracks().forEach(track => track.enabled = !isMicMuted);
             const btn = document.getElementById('micBtn');
-            btn.textContent = isMicMuted ? '🔇' : '🎤';
+            btn.textContent = isMicMuted ? '' : '🎤';
             btn.classList.toggle('bg-red-600', isMicMuted);
             btn.classList.toggle('bg-slate-700', !isMicMuted);
         }
@@ -329,7 +323,7 @@
             isCamMuted = !isCamMuted;
             localStream.getVideoTracks().forEach(track => track.enabled = !isCamMuted);
             const btn = document.getElementById('camBtn');
-            btn.textContent = isCamMuted ? '📷' : '📷';
+            btn.textContent = isCamMuted ? '📷' : '';
             btn.classList.toggle('bg-red-600', isCamMuted);
             btn.classList.toggle('bg-slate-700', !isCamMuted);
             localVideo.classList.toggle('hidden', isCamMuted);
@@ -349,7 +343,6 @@
 
         window.addEventListener('load', () => {
             initPeer();
-            // Автоматически пробуем получить доступ
             requestCamera();
         });
 
@@ -360,4 +353,3 @@
     </script>
 </body>
 </html>
-
