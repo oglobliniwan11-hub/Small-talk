@@ -306,7 +306,8 @@
         chatModalInput.value = '';
     }
 
-    function setupDataConnection(conn) {
+    // Надёжная установка DataConnection с повторными попытками
+    function setupDataConnection(conn, isInitiator = true) {
         if (dataConnection === conn) return;
         if (dataConnection) {
             dataConnection.close();
@@ -325,8 +326,25 @@
             log('Чат закрыт', 'info');
             if (dataConnection === conn) dataConnection = null;
         });
+        dataConnection.on('error', (err) => log('Ошибка чата: ' + err, 'error'));
+        
+        // Если соединение уже открыто (например, при входящем)
         if (dataConnection.open) {
             addChatMessageToModal('📡 Чат готов', false);
+        } else if (isInitiator) {
+            // Повторная попытка каждые 2 секунды (максимум 5 раз)
+            let attempts = 0;
+            const interval = setInterval(() => {
+                if (dataConnection && dataConnection.open) {
+                    clearInterval(interval);
+                    addChatMessageToModal('📡 Чат готов', false);
+                } else if (attempts >= 10) {
+                    clearInterval(interval);
+                    log('Не удалось открыть чат', 'error');
+                    addChatMessageToModal('❌ Чат не подключился', false);
+                }
+                attempts++;
+            }, 1000);
         }
     }
 
@@ -498,11 +516,11 @@
             log(`Входящее DataConnection от ${conn.peer}`, 'info');
             // Принимаем входящее соединение для чата
             if (!dataConnection) {
-                setupDataConnection(conn);
+                setupDataConnection(conn, false);
             } else {
                 // Если уже есть, заменяем (на случай, если старое не работает)
                 log('Замена существующего чат-соединения', 'info');
-                setupDataConnection(conn);
+                setupDataConnection(conn, false);
             }
         });
         peer.on('error', err => log(`Peer ошибка: ${err.type}`, 'error'));
@@ -515,10 +533,11 @@
         videoContainer.style.display = 'block'; controlsDiv.classList.remove('hidden'); callingOverlay.classList.remove('hidden');
         currentCall = peer.call(rid, localStream);
         handleCall(currentCall);
+        
         // Создаём DataConnection для чата (только если его ещё нет)
         if (!dataConnection) {
             const conn = peer.connect(rid, { label: 'chat', reliable: true });
-            setupDataConnection(conn);
+            setupDataConnection(conn, true);
         } else {
             log('Чат уже есть', 'info');
         }
@@ -531,7 +550,12 @@
         else call.answer(localStream);
         videoContainer.style.display = 'block'; controlsDiv.classList.remove('hidden');
         currentCall = call; handleCall(call);
-        // Не создаём своё DataConnection, ждём входящее от звонящего (обработается в peer.on('connection'))
+        
+        // При ответе на звонок создаём DataConnection к звонящему (для симметрии)
+        if (!dataConnection) {
+            const conn = peer.connect(call.peer, { label: 'chat', reliable: true });
+            setupDataConnection(conn, true);
+        }
         updateScreenButtonVisibility();
         log('Входящий звонок принят', 'info');
     }
