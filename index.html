@@ -98,6 +98,7 @@
             font-size: 1.6rem;
             cursor: pointer;
             box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            border: none;
         }
         .control-btn:hover {
             transform: scale(1.05);
@@ -160,6 +161,7 @@
             border-radius: 2rem;
             padding: 0.5rem 1.2rem;
             font-weight: 600;
+            cursor: pointer;
         }
         @media (min-width: 1024px) {
             .main-grid {
@@ -180,8 +182,9 @@
         .hidden {
             display: none;
         }
+        /* Заголовок Wave + волна */
         .wave-title {
-            font-size: 2.2rem;
+            font-size: 2.5rem;
             font-weight: 800;
             letter-spacing: -0.5px;
             background: linear-gradient(135deg, #60a5fa, #34d399);
@@ -190,14 +193,43 @@
             color: transparent;
             margin-bottom: 0.25rem;
         }
+        .wave-svg {
+            width: 100%;
+            max-width: 220px;
+            height: auto;
+            margin-top: -10px;
+            opacity: 0.7;
+        }
+        /* Круглая кнопка вызова */
+        .round-call-btn {
+            width: 48px;
+            height: 48px;
+            background-color: #10b981;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.6rem;
+            transition: 0.2s;
+            cursor: pointer;
+            border: none;
+        }
+        .round-call-btn:hover {
+            background-color: #059669;
+            transform: scale(1.05);
+        }
     </style>
 </head>
 <body>
 <div class="w-full max-w-6xl space-y-5">
-    <!-- Заголовок Wave -->
+    <!-- Заголовок Wave с волной -->
     <div class="text-center">
         <div class="wave-title">Wave</div>
-        <div class="text-xs text-slate-500 mt-0">чистый звук · живое общение</div>
+        <svg class="wave-svg mx-auto" viewBox="0 0 200 20" xmlns="http://www.w3.org/2000/svg">
+            <path d="M0,10 Q25,0 50,10 T100,10 T150,10 T200,10" stroke="#60a5fa" fill="none" stroke-width="1.5" opacity="0.6"/>
+            <path d="M0,13 Q25,3 50,13 T100,13 T150,13 T200,13" stroke="#34d399" fill="none" stroke-width="1.2" opacity="0.4"/>
+        </svg>
+        <div class="text-[0.7rem] text-slate-500 mt-0">чистый звук · живое общение</div>
     </div>
 
     <!-- Панель управления -->
@@ -212,9 +244,9 @@
             </div>
             <div class="flex-1">
                 <label class="block text-xs text-slate-400 mb-1">ID собеседника</label>
-                <div class="flex gap-2">
+                <div class="flex gap-2 items-center">
                     <input type="text" id="remoteId" placeholder="Вставьте ID" class="flex-1 bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-2 text-slate-200">
-                    <button onclick="startCall()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-semibold">📞 Позвонить</button>
+                    <button id="callButton" onclick="startCall()" class="round-call-btn" title="Позвонить">📞</button>
                 </div>
             </div>
         </div>
@@ -252,7 +284,7 @@
                 <button id="micBtn" onclick="toggleMic()" class="control-btn">🎤</button>
                 <button id="camBtn" onclick="toggleCamera()" class="control-btn hidden">📷</button>
                 <button id="screenBtn" onclick="toggleScreenShare()" class="control-btn hidden" title="Показать экран">🖥️</button>
-                <button onclick="endCall()" class="control-btn bg-red-600 hover:bg-red-500">📴</button>
+                <button id="hangupBtn" onclick="endCall()" class="control-btn bg-red-600 hover:bg-red-500" style="background:#dc2626;">📞</button>
             </div>
         </div>
 
@@ -277,7 +309,7 @@
     let dataConnection = null;
     let isMicMuted = false;
     let isCamMuted = false;
-    let hasVideo = false;        // есть ли видеотрек
+    let hasVideo = false;
     let screenSharingActive = false;
     let originalVideoTrack = null;
     let ringInterval = null;
@@ -301,6 +333,7 @@
     const chatMessagesDiv = document.getElementById('chatMessages');
     const chatInput = document.getElementById('chatInput');
     const screenBtn = document.getElementById('screenBtn');
+    const hangupBtn = document.getElementById('hangupBtn');
 
     function log(msg, type = 'info') {
         debugLog.classList.remove('hidden');
@@ -419,27 +452,42 @@
         if (dataConnection === conn) return;
         if (dataConnection) dataConnection.close();
         dataConnection = conn;
-        dataConnection.on('open', () => { chatPanel.classList.remove('hidden'); log('Чат готов', 'success'); });
+        dataConnection.on('open', () => { 
+            chatPanel.classList.remove('hidden'); 
+            log('Чат готов', 'success');
+        });
         dataConnection.on('data', (d) => { if (d?.type === 'chat') addChatMessage(d.message, false); });
-        dataConnection.on('close', () => { if (dataConnection === conn) dataConnection = null; });
+        dataConnection.on('close', () => { 
+            if (dataConnection === conn) dataConnection = null;
+            chatPanel.classList.add('hidden');
+        });
         if (dataConnection.open) chatPanel.classList.remove('hidden');
     }
 
-    // --- Управление кнопкой экрана (показываем только если есть видео) ---
+    // --- Проверка поддержки экрана ---
+    function isScreenShareSupported() {
+        return !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+    }
+
+    // --- Управление кнопкой экрана ---
     function updateScreenButtonVisibility() {
-        if (!controlsDiv.classList.contains('hidden') && hasVideo && !screenSharingActive) {
+        if (!controlsDiv.classList.contains('hidden') && hasVideo && !screenSharingActive && isScreenShareSupported()) {
             screenBtn.classList.remove('hidden');
         } else {
             screenBtn.classList.add('hidden');
         }
     }
 
-    // --- Демонстрация экрана (с проверкой наличия видеосендера) ---
+    // --- Демонстрация экрана ---
     async function toggleScreenShare() {
         if (!currentCall) { log('Нет активного звонка', 'error'); return; }
         if (!localStream) { log('Нет медиапотока', 'error'); return; }
         if (!hasVideo) {
             log('Невозможно показать экран: нет видеотрека. Включите камеру.', 'error');
+            return;
+        }
+        if (!isScreenShareSupported()) {
+            log('Ваш браузер не поддерживает демонстрацию экрана (требуется HTTPS и современный браузер).', 'error');
             return;
         }
         if (screenSharingActive) {
@@ -455,7 +503,6 @@
             const screenTrack = screenStream.getVideoTracks()[0];
             if (!screenTrack) throw new Error('Нет видео с экрана');
 
-            // Ждём появления видеосендера
             let videoSender = null;
             for (let i = 0; i < 20; i++) {
                 const pc = currentCall.peerConnection;
