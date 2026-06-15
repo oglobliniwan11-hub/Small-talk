@@ -167,6 +167,20 @@
             cursor: pointer;
             margin-left: 8px;
         }
+        .server-status {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        .server-status.online { background: #10b981; box-shadow: 0 0 8px #10b981; }
+        .server-status.offline { background: #ef4444; }
+        .server-status.connecting { background: #f59e0b; animation: pulse 1s infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
     </style>
 </head>
 <body>
@@ -183,9 +197,12 @@
     <div class="glass-panel p-5 space-y-4">
         <div class="flex flex-col md:flex-row gap-4">
             <div class="flex-1">
-                <label class="block text-xs text-slate-400 mb-1">Ваш ID</label>
+                <label class="block text-xs text-slate-400 mb-1">
+                    Ваш ID 
+                    <span id="serverStatus" class="server-status connecting" title="Статус сервера"></span>
+                </label>
                 <div class="flex gap-2">
-                    <input type="text" id="myId" readonly class="flex-1 bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-2 text-slate-200 font-mono text-sm">
+                    <input type="text" id="myId" readonly class="flex-1 bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-2 text-slate-200 font-mono text-sm" value="Подключение...">
                     <button onclick="copyId()" class="px-4 bg-slate-700 hover:bg-slate-600 rounded-xl">📋</button>
                 </div>
             </div>
@@ -246,31 +263,56 @@
         <div class="text-center text-xs text-slate-500 p-3">Нет сообщений</div>
     </div>
     <div class="chat-modal-input">
-        <input type="text" id="chatModalInput" placeholder="Сообщение..." maxlength="500">
+        <input type="text" id="chatModalInput" placeholder="Сообщение..." maxlength="500" onkeypress="if(event.key==='Enter') sendChatMessageModal()">
         <button onclick="sendChatMessageModal()">→</button>
     </div>
 </div>
 
 <script>
+    // ============================================
+    // НАСТРОЙКИ СЕРВЕРА (ПУБЛИЧНЫЙ PEERJS)
+    // ============================================
+    const PEER_SERVER_CONFIG = {
+        host: '0.peerjs.com',     // Публичный сервер PeerJS
+        port: 443,                 // HTTPS порт
+        secure: true,              // Использовать SSL
+        path: '/',                 // Корневой путь
+        debug: 3
+    };
+
+    // ============================================
+    // ПЕРЕМЕННЫЕ
+    // ============================================
     let peer = null, localStream = null, currentCall = null, dataConnection = null;
     let isMicMuted = false, isCamMuted = false, hasVideo = false, screenSharingActive = false;
     let originalVideoTrack = null, ringInterval = null;
     let canvasAnimId = null;
-    let remotePeerId = null; // запоминаем ID собеседника для переподключения чата
+    let remotePeerId = null;
+    let chatRetryInterval = null;
 
-    // DOM
-    const myIdInput = document.getElementById('myId'), remoteIdInput = document.getElementById('remoteId');
-    const localVideo = document.getElementById('localVideo'), remoteVideo = document.getElementById('remoteVideo');
-    const videoContainer = document.getElementById('videoContainer'), controlsDiv = document.getElementById('controls');
+    // ============================================
+    // DOM ЭЛЕМЕНТЫ
+    // ============================================
+    const myIdInput = document.getElementById('myId');
+    const remoteIdInput = document.getElementById('remoteId');
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+    const videoContainer = document.getElementById('videoContainer');
+    const controlsDiv = document.getElementById('controls');
     const callingOverlay = document.getElementById('callingOverlay');
     const wavesCanvas = document.getElementById('wavesCanvas');
     const audioOnlyPlaceholder = document.getElementById('audioOnlyPlaceholder');
     const statusDiv = document.getElementById('statusMessage');
-    const debugLog = document.getElementById('debugLog'), screenBtn = document.getElementById('screenBtn');
+    const debugLog = document.getElementById('debugLog');
+    const screenBtn = document.getElementById('screenBtn');
     const chatModal = document.getElementById('chatModal');
     const chatModalMessages = document.getElementById('chatModalMessages');
     const chatModalInput = document.getElementById('chatModalInput');
+    const serverStatus = document.getElementById('serverStatus');
 
+    // ============================================
+    // ЛОГИРОВАНИЕ
+    // ============================================
     function log(msg, type = 'info') {
         debugLog.classList.remove('hidden');
         const p = document.createElement('p');
@@ -278,10 +320,12 @@
         p.innerHTML = `[${new Date().toLocaleTimeString()}] ${msg}`;
         debugLog.appendChild(p);
         debugLog.scrollTop = debugLog.scrollHeight;
-        console.log(msg);
+        console.log(`[${type}] ${msg}`);
     }
 
-    // -------- Волны ----------
+    // ============================================
+    // ВОЛНЫ (АНИМАЦИЯ)
+    // ============================================
     let wavePoints = [];
     let wavePhase = 0;
     let waveSpeed = 0.02;
@@ -363,10 +407,13 @@
         initWaves();
     }
 
-    // -------- Чат ----------
+    // ============================================
+    // ЧАТ
+    // ============================================
     function toggleChatModal() {
         if (chatModal.classList.contains('hidden')) {
             chatModal.classList.remove('hidden');
+            chatModalInput.focus();
         } else {
             chatModal.classList.add('hidden');
         }
@@ -386,49 +433,78 @@
     function sendChatMessageModal() {
         const txt = chatModalInput.value.trim();
         if (!txt) return;
+        
         if (!dataConnection || dataConnection.open === false) {
-            log('Чат не активен', 'error');
-            addChatMessageToModal('❌ Нет соединения', true);
+            log('Чат не подключён. Попытка переподключения...', 'error');
+            addChatMessageToModal('⚠️ Нет соединения, переподключаем...', true);
+            reconnectChat();
             return;
         }
-        dataConnection.send({ type: 'chat', message: txt });
-        addChatMessageToModal(txt, true);
-        chatModalInput.value = '';
+        
+        try {
+            dataConnection.send({ type: 'chat', message: txt });
+            addChatMessageToModal(txt, true);
+            chatModalInput.value = '';
+            log('Сообщение отправлено', 'success');
+        } catch (err) {
+            log('Ошибка отправки: ' + err.message, 'error');
+            addChatMessageToModal('❌ Ошибка отправки', true);
+        }
     }
 
     function setupDataConnection(conn, isInitiator = false) {
         if (dataConnection === conn) return;
+        
         if (dataConnection) {
-            dataConnection.close();
+            try { dataConnection.close(); } catch(e) {}
         }
+        
         dataConnection = conn;
+        
         dataConnection.on('open', () => {
-            log('Чат соединение открыто', 'success');
-            addChatMessageToModal('📡 Чат готов', false);
+            log('✅ Чат соединение открыто', 'success');
+            addChatMessageToModal('📡 Чат подключён', false);
+            if (chatRetryInterval) {
+                clearInterval(chatRetryInterval);
+                chatRetryInterval = null;
+            }
         });
+        
         dataConnection.on('data', (d) => {
             if (d && d.type === 'chat') {
                 addChatMessageToModal(d.message, false);
+                log('Получено сообщение', 'info');
             }
         });
+        
         dataConnection.on('close', () => {
             log('Чат закрыт', 'info');
             if (dataConnection === conn) dataConnection = null;
+            addChatMessageToModal('⚠️ Чат отключён', false);
         });
-        dataConnection.on('error', (err) => log('Ошибка чата: ' + err, 'error'));
         
-        if (dataConnection.open) {
-            addChatMessageToModal('📡 Чат готов', false);
-        } else if (isInitiator) {
+        dataConnection.on('error', (err) => {
+            log('Ошибка чата: ' + err, 'error');
+        });
+        
+        // Если инициатор - ждём открытия с retry
+        if (isInitiator) {
             let attempts = 0;
-            const interval = setInterval(() => {
+            const maxAttempts = 15;
+            
+            if (chatRetryInterval) clearInterval(chatRetryInterval);
+            
+            chatRetryInterval = setInterval(() => {
                 if (dataConnection && dataConnection.open) {
-                    clearInterval(interval);
+                    clearInterval(chatRetryInterval);
+                    chatRetryInterval = null;
                     addChatMessageToModal('📡 Чат готов', false);
-                } else if (attempts >= 10) {
-                    clearInterval(interval);
-                    log('Не удалось открыть чат', 'error');
-                    addChatMessageToModal('❌ Чат не подключился', false);
+                    log('Чат успешно подключился', 'success');
+                } else if (attempts >= maxAttempts) {
+                    clearInterval(chatRetryInterval);
+                    chatRetryInterval = null;
+                    log('Не удалось открыть чат после ' + maxAttempts + ' попыток', 'error');
+                    addChatMessageToModal('❌ Чат не подключился. Нажмите 🔄', false);
                 }
                 attempts++;
             }, 1000);
@@ -440,16 +516,27 @@
             addChatMessageToModal('❌ Нет активного собеседника', true);
             return;
         }
+        
         if (dataConnection) {
-            dataConnection.close();
+            try { dataConnection.close(); } catch(e) {}
             dataConnection = null;
         }
+        
         log('Повторное создание чат-соединения...', 'info');
-        const conn = peer.connect(remotePeerId, { label: 'chat', reliable: true });
+        addChatMessageToModal('🔄 Переподключаем...', true);
+        
+        const conn = peer.connect(remotePeerId, { 
+            label: 'chat', 
+            reliable: true,
+            serialization: 'json'
+        });
+        
         setupDataConnection(conn, true);
     }
 
-    // -------- Звук звонка ----------
+    // ============================================
+    // ЗВОНОК
+    // ============================================
     function playRingtone() {
         stopRingtone();
         try {
@@ -470,33 +557,63 @@
             window._ringCtx = ctx;
         } catch(e) { log('Звук звонка не поддерживается', 'error'); }
     }
-    function stopRingtone() { if (ringInterval) clearInterval(ringInterval); if (window._ringCtx) window._ringCtx.close().catch(()=>{}); window._ringCtx = null; }
-
-    // -------- Демонстрация экрана ----------
-    function isScreenShareSupported() { return !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia); }
-    function updateScreenButtonVisibility() {
-        if (!controlsDiv.classList.contains('hidden') && hasVideo && !screenSharingActive && isScreenShareSupported()) screenBtn.classList.remove('hidden');
-        else screenBtn.classList.add('hidden');
+    
+    function stopRingtone() { 
+        if (ringInterval) clearInterval(ringInterval); 
+        if (window._ringCtx) window._ringCtx.close().catch(()=>{}); 
+        window._ringCtx = null; 
     }
+
+    // ============================================
+    // ДЕМО ЭКРАНА
+    // ============================================
+    function isScreenShareSupported() { return !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia); }
+    
+    function updateScreenButtonVisibility() {
+        if (!controlsDiv.classList.contains('hidden') && hasVideo && !screenSharingActive && isScreenShareSupported()) {
+            screenBtn.classList.remove('hidden');
+        } else {
+            screenBtn.classList.add('hidden');
+        }
+    }
+    
     async function toggleScreenShare() {
         if (!currentCall) { log('Нет активного звонка', 'error'); return; }
         if (!localStream) { log('Нет медиапотока', 'error'); return; }
-        if (!hasVideo) { log('Невозможно показать экран: нет видеотрека. Включите камеру.', 'error'); return; }
-        if (!isScreenShareSupported()) { log('Ваш браузер не поддерживает демонстрацию экрана (требуется HTTPS и современный браузер).', 'error'); return; }
+        if (!hasVideo) { log('Включите камеру для демонстрации экрана', 'error'); return; }
+        if (!isScreenShareSupported()) { log('Браузер не поддерживает демонстрацию экрана', 'error'); return; }
+        
         if (screenSharingActive) await stopScreenShare();
         else await startScreenShare();
     }
+    
     async function startScreenShare() {
         try {
             const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
             const screenTrack = screenStream.getVideoTracks()[0];
             if (!screenTrack) throw new Error('Нет видео с экрана');
+            
             let videoSender = null;
-            for (let i = 0; i < 20; i++) { const pc = currentCall.peerConnection; if (pc) videoSender = pc.getSenders().find(s => s.track && s.track.kind === 'video'); if (videoSender) break; await new Promise(r => setTimeout(r, 200)); }
-            if (!videoSender) throw new Error('Видеосендер не найден. Убедитесь, что у вас включена камера.');
-            if (!originalVideoTrack && localStream.getVideoTracks()[0]) originalVideoTrack = localStream.getVideoTracks()[0];
+            for (let i = 0; i < 20; i++) { 
+                const pc = currentCall.peerConnection; 
+                if (pc) videoSender = pc.getSenders().find(s => s.track && s.track.kind === 'video'); 
+                if (videoSender) break; 
+                await new Promise(r => setTimeout(r, 200)); 
+            }
+            
+            if (!videoSender) throw new Error('Видеосендер не найден');
+            
+            if (!originalVideoTrack && localStream.getVideoTracks()[0]) {
+                originalVideoTrack = localStream.getVideoTracks()[0];
+            }
+            
             await videoSender.replaceTrack(screenTrack);
-            localStream.getVideoTracks().forEach(t => { if (t !== screenTrack) { t.stop(); localStream.removeTrack(t); } });
+            localStream.getVideoTracks().forEach(t => { 
+                if (t !== screenTrack) { 
+                    t.stop(); 
+                    localStream.removeTrack(t); 
+                } 
+            });
             localStream.addTrack(screenTrack);
             localVideo.srcObject = localStream;
             localVideo.classList.remove('hidden');
@@ -505,147 +622,382 @@
             screenSharingActive = true;
             screenBtn.classList.add('bg-emerald-600');
             log('Демонстрация экрана активна', 'success');
-            screenTrack.onended = () => { if (screenSharingActive) stopScreenShare(); };
-        } catch (err) { log('Ошибка экрана: ' + err.message, 'error'); }
+            
+            screenTrack.onended = () => { 
+                if (screenSharingActive) stopScreenShare(); 
+            };
+        } catch (err) { 
+            log('Ошибка экрана: ' + err.message, 'error'); 
+        }
     }
+    
     async function stopScreenShare() {
         if (!screenSharingActive) return;
         try {
             const pc = currentCall.peerConnection;
             const videoSender = pc?.getSenders().find(s => s.track?.kind === 'video');
             if (!videoSender) throw new Error('Нет видеосендера');
+            
             let restoreTrack = null;
-            if (originalVideoTrack && originalVideoTrack.readyState === 'live') restoreTrack = originalVideoTrack;
-            else if (localStream.getVideoTracks().length > 0 && localStream.getVideoTracks()[0].readyState === 'live') restoreTrack = localStream.getVideoTracks()[0];
-            else { const newCam = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }); restoreTrack = newCam.getVideoTracks()[0]; localStream.addTrack(restoreTrack); originalVideoTrack = restoreTrack; }
+            if (originalVideoTrack && originalVideoTrack.readyState === 'live') {
+                restoreTrack = originalVideoTrack;
+            } else if (localStream.getVideoTracks().length > 0 && localStream.getVideoTracks()[0].readyState === 'live') {
+                restoreTrack = localStream.getVideoTracks()[0];
+            } else { 
+                const newCam = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }); 
+                restoreTrack = newCam.getVideoTracks()[0]; 
+                localStream.addTrack(restoreTrack); 
+                originalVideoTrack = restoreTrack; 
+            }
+            
             if (restoreTrack) {
                 await videoSender.replaceTrack(restoreTrack);
-                localStream.getVideoTracks().forEach(t => { if (t !== restoreTrack) { t.stop(); localStream.removeTrack(t); } });
+                localStream.getVideoTracks().forEach(t => { 
+                    if (t !== restoreTrack) { 
+                        t.stop(); 
+                        localStream.removeTrack(t); 
+                    } 
+                });
                 localVideo.srcObject = localStream;
                 if (isCamMuted) restoreTrack.enabled = false;
             }
+            
             screenSharingActive = false;
             screenBtn.classList.remove('bg-emerald-600');
-            if (!hasVideo || isCamMuted) { wavesCanvas.style.display = 'block'; localVideo.classList.add('hidden'); }
-            else { wavesCanvas.style.display = 'none'; localVideo.classList.remove('hidden'); }
+            
+            if (!hasVideo || isCamMuted) { 
+                wavesCanvas.style.display = 'block'; 
+                localVideo.classList.add('hidden'); 
+            } else { 
+                wavesCanvas.style.display = 'none'; 
+                localVideo.classList.remove('hidden'); 
+            }
+            
             updateScreenButtonVisibility();
             log('Экран выключен', 'success');
-        } catch(e) { log('Ошибка остановки экрана: ' + e.message, 'error'); }
+        } catch(e) { 
+            log('Ошибка остановки экрана: ' + e.message, 'error'); 
+        }
     }
 
-    // -------- Медиа ----------
+    // ============================================
+    // МЕДИА
+    // ============================================
     async function requestCamera() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             if (localStream) localStream.getTracks().forEach(t => t.stop());
-            localStream = stream; hasVideo = true;
-            localVideo.srcObject = stream; localVideo.classList.remove('hidden');
-            wavesCanvas.style.display = 'none'; audioOnlyPlaceholder.classList.add('hidden');
+            localStream = stream; 
+            hasVideo = true;
+            localVideo.srcObject = stream; 
+            localVideo.classList.remove('hidden');
+            wavesCanvas.style.display = 'none'; 
+            audioOnlyPlaceholder.classList.add('hidden');
             document.getElementById('camBtn').classList.remove('hidden');
             originalVideoTrack = stream.getVideoTracks()[0];
             updateScreenButtonVisibility();
             log('Камера + микрофон готовы', 'success');
             statusDiv.innerText = '✅ Готово к звонку';
             return true;
-        } catch(e) { log('Камера недоступна, переключаем на аудио', 'info'); return requestAudioOnly(); }
+        } catch(e) { 
+            log('Камера недоступна: ' + e.message, 'error');
+            return requestAudioOnly(); 
+        }
     }
+    
     async function requestAudioOnly() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
             if (localStream) localStream.getTracks().forEach(t => t.stop());
-            localStream = stream; hasVideo = false;
-            localVideo.classList.add('hidden'); wavesCanvas.style.display = 'block';
+            localStream = stream; 
+            hasVideo = false;
+            localVideo.classList.add('hidden'); 
+            wavesCanvas.style.display = 'block';
             audioOnlyPlaceholder.classList.add('hidden');
             document.getElementById('camBtn').classList.add('hidden');
             updateScreenButtonVisibility();
             log('Микрофон готов (аудиорежим)', 'success');
             statusDiv.innerText = '🎙 Аудиорежим';
             return true;
-        } catch(e) { log('Нет доступа к микрофону', 'error'); return false; }
+        } catch(e) { 
+            log('Нет доступа к микрофону: ' + e.message, 'error'); 
+            return false; 
+        }
     }
 
-    // -------- PeerJS ----------
+    // ============================================
+    // PEERJS ИНИЦИАЛИЗАЦИЯ
+    // ============================================
     function initPeer() {
-        peer = new Peer({ config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] } });
-        peer.on('open', id => { myIdInput.value = id; statusDiv.innerText = '✅ ID готов'; log(`Ваш ID: ${id}`, 'success'); });
+        log('Подключение к серверу 0.peerjs.com...', 'info');
+        serverStatus.className = 'server-status connecting';
+        
+        peer = new Peer({
+            host: PEER_SERVER_CONFIG.host,
+            port: PEER_SERVER_CONFIG.port,
+            secure: PEER_SERVER_CONFIG.secure,
+            path: PEER_SERVER_CONFIG.path,
+            debug: PEER_SERVER_CONFIG.debug,
+            config: {
+                iceServers: [
+                    // Бесплатные TURN серверы для работы через NAT
+                    { 
+                        urls: 'turn:openrelay.metered.ca:80',
+                        username: 'openrelayproject',
+                        credential: 'openrelayproject'
+                    },
+                    { 
+                        urls: 'turn:openrelay.metered.ca:443',
+                        username: 'openrelayproject',
+                        credential: 'openrelayproject'
+                    },
+                    { 
+                        urls: 'turn:openrelay.metered.ca:80?transport=tcp',
+                        username: 'openrelayproject',
+                        credential: 'openrelayproject'
+                    },
+                    { 
+                        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+                        username: 'openrelayproject',
+                        credential: 'openrelayproject'
+                    },
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun.cloudflare.com:3478' }
+                ]
+            }
+        });
+
+        peer.on('open', id => {
+            myIdInput.value = id;
+            statusDiv.innerText = '✅ Готово к звонку';
+            serverStatus.className = 'server-status online';
+            serverStatus.title = 'Сервер подключён';
+            log(`✅ Ваш ID: ${id}`, 'success');
+        });
+
         peer.on('call', call => { 
+            log(`📞 Входящий звонок от: ${call.peer}`, 'info');
             playRingtone(); 
+            
             if (confirm('Входящий звонок. Принять?')) { 
                 stopRingtone(); 
                 remotePeerId = call.peer;
                 answerCall(call); 
-            } else { stopRingtone(); call.close(); } 
+            } else { 
+                stopRingtone(); 
+                call.close(); 
+                log('Звонок отклонён', 'info');
+            } 
         });
+
         peer.on('connection', conn => {
-            log(`Входящее DataConnection от ${conn.peer}`, 'info');
-            if (!dataConnection) {
+            log(`💬 Входящее соединение чата от ${conn.peer}`, 'info');
+            
+            // Принимаем чат только если есть активный звонок
+            if (remotePeerId === conn.peer || currentCall) {
                 setupDataConnection(conn, false);
             } else {
-                log('Замена DataConnection', 'info');
-                setupDataConnection(conn, false);
+                log('Чат отклонён (нет активного звонка)', 'info');
+                conn.close();
             }
         });
-        peer.on('error', err => log(`Peer ошибка: ${err.type}`, 'error'));
+
+        peer.on('error', err => {
+            log(`❌ Peer ошибка: ${err.type} - ${err.message}`, 'error');
+            
+            if (err.type === 'network') {
+                serverStatus.className = 'server-status offline';
+                statusDiv.innerText = '❌ Нет связи с сервером';
+                log('Проверьте интернет-соединение', 'error');
+            } else if (err.type === 'server-error') {
+                serverStatus.className = 'server-status offline';
+                statusDiv.innerText = '❌ Ошибка сервера';
+            } else if (err.type === 'unavailable-id') {
+                log('ID уже используется, генерируем новый...', 'info');
+                peer.destroy();
+                setTimeout(initPeer, 1000);
+            } else if (err.type === 'peer-unavailable') {
+                log('Собеседник не найден. Проверьте ID.', 'error');
+                statusDiv.innerText = '❌ Собеседник не найден';
+                endCallUI();
+            } else if (err.type === 'disconnected') {
+                log('Потеряно соединение. Переподключение...', 'error');
+                peer.reconnect();
+            } else if (err.type === 'browser-incompatible') {
+                log('Браузер не поддерживает WebRTC', 'error');
+                statusDiv.innerText = '❌ Браузер не поддерживается';
+            } else if (err.type === 'ssl-unavailable') {
+                log('Требуется HTTPS для работы', 'error');
+                statusDiv.innerText = '❌ Требуется HTTPS';
+            }
+        });
+
+        peer.on('disconnected', () => {
+            log('Отключено от сервера. Переподключение...', 'error');
+            serverStatus.className = 'server-status connecting';
+            setTimeout(() => {
+                if (peer && !peer.destroyed) {
+                    try {
+                        peer.reconnect();
+                    } catch(e) {
+                        log('Ошибка переподключения: ' + e.message, 'error');
+                    }
+                }
+            }, 3000);
+        });
     }
 
+    // ============================================
+    // ЗВОНКИ
+    // ============================================
     function startCall() {
         const rid = remoteIdInput.value.trim();
         if (!rid) return alert('Введите ID собеседника');
-        if (!localStream) return alert('Разрешите доступ к микрофону/камере');
+        if (!localStream) return alert('Сначала разрешите доступ к микрофону/камере');
+        if (!peer || peer.destroyed) return alert('Сервер не подключён. Обновите страницу.');
+        
         remotePeerId = rid;
-        videoContainer.style.display = 'block'; controlsDiv.classList.remove('hidden'); callingOverlay.classList.remove('hidden');
+        videoContainer.style.display = 'block'; 
+        controlsDiv.classList.remove('hidden'); 
+        callingOverlay.classList.remove('hidden');
+        
         currentCall = peer.call(rid, localStream);
         handleCall(currentCall);
         
-        if (!dataConnection) {
-            const conn = peer.connect(rid, { label: 'chat', reliable: true });
-            setupDataConnection(conn, true);
-            log('Создаём чат-соединение (инициатор)', 'info');
-        }
+        // Создаём чат-соединение
+        log('Создаём чат-соединение...', 'info');
+        const conn = peer.connect(rid, { 
+            label: 'chat', 
+            reliable: true,
+            serialization: 'json'
+        });
+        setupDataConnection(conn, true);
+        
         updateScreenButtonVisibility();
-        log('Исходящий звонок', 'info');
+        log(`📞 Исходящий звонок на ${rid}`, 'info');
     }
 
     function answerCall(call) {
         remotePeerId = call.peer;
-        if (!localStream) requestAudioOnly().then(() => call.answer(localStream));
-        else call.answer(localStream);
-        videoContainer.style.display = 'block'; controlsDiv.classList.remove('hidden');
-        currentCall = call; handleCall(call);
-        updateScreenButtonVisibility();
-        log('Входящий звонок принят', 'info');
+        
+        if (!localStream) {
+            requestAudioOnly().then(() => {
+                if (localStream) {
+                    call.answer(localStream);
+                    videoContainer.style.display = 'block'; 
+                    controlsDiv.classList.remove('hidden');
+                    currentCall = call; 
+                    handleCall(call);
+                    
+                    // Создаём чат-соединение при входящем звонке
+                    log('Создаём чат-соединение...', 'info');
+                    const conn = peer.connect(call.peer, { 
+                        label: 'chat', 
+                        reliable: true,
+                        serialization: 'json'
+                    });
+                    setupDataConnection(conn, true);
+                    
+                    updateScreenButtonVisibility();
+                    log('✅ Входящий звонок принят (аудио)', 'success');
+                }
+            });
+        } else {
+            call.answer(localStream);
+            videoContainer.style.display = 'block'; 
+            controlsDiv.classList.remove('hidden');
+            currentCall = call; 
+            handleCall(call);
+            
+            // Создаём чат-соединение при входящем звонке
+            log('Создаём чат-соединение...', 'info');
+            const conn = peer.connect(call.peer, { 
+                label: 'chat', 
+                reliable: true,
+                serialization: 'json'
+            });
+            setupDataConnection(conn, true);
+            
+            updateScreenButtonVisibility();
+            log('✅ Входящий звонок принят', 'success');
+        }
     }
 
     function handleCall(call) {
         call.on('stream', remoteStream => {
+            log('📺 Получен видеопоток', 'success');
             remoteVideo.srcObject = remoteStream;
             callingOverlay.classList.add('hidden');
             statusDiv.innerText = '🟢 В эфире';
-            if (remoteStream.getVideoTracks().length === 0 || remoteStream.getVideoTracks()[0].readyState === 'ended') {
+            
+            if (remoteStream.getVideoTracks().length === 0 || 
+                remoteStream.getVideoTracks()[0].readyState === 'ended') {
                 wavesCanvas.style.display = 'block';
             } else {
                 wavesCanvas.style.display = 'none';
             }
         });
-        call.on('close', () => endCallUI());
-        call.on('error', () => endCallUI());
+        
+        call.on('close', () => {
+            log('📴 Звонок завершён', 'info');
+            endCallUI();
+        });
+        
+        call.on('error', (err) => {
+            log('❌ Ошибка звонка: ' + err, 'error');
+            endCallUI();
+        });
     }
 
-    function endCall() { if (currentCall) currentCall.close(); if (dataConnection) dataConnection.close(); endCallUI(); }
+    function endCall() { 
+        log('Завершение звонка...', 'info');
+        if (currentCall) {
+            try { currentCall.close(); } catch(e) {}
+        }
+        if (dataConnection) {
+            try { dataConnection.close(); } catch(e) {}
+        }
+        endCallUI(); 
+    }
+    
     function endCallUI() {
-        remoteVideo.srcObject = null; videoContainer.style.display = 'none'; controlsDiv.classList.add('hidden');
+        remoteVideo.srcObject = null; 
+        videoContainer.style.display = 'none'; 
+        controlsDiv.classList.add('hidden');
         callingOverlay.classList.add('hidden');
         chatModal.classList.add('hidden');
         chatModalMessages.innerHTML = '<div class="text-center text-xs text-slate-500 p-3">Нет сообщений</div>';
         statusDiv.innerText = 'Звонок завершён';
-        if (!hasVideo) wavesCanvas.style.display = 'block'; else wavesCanvas.style.display = 'none';
-        stopRingtone(); currentCall = null; 
-        if (dataConnection) { dataConnection.close(); dataConnection = null; }
+        
+        if (!hasVideo) {
+            wavesCanvas.style.display = 'block';
+        } else {
+            wavesCanvas.style.display = 'none';
+        }
+        
+        stopRingtone(); 
+        currentCall = null; 
+        
+        if (dataConnection) { 
+            try { dataConnection.close(); } catch(e) {}
+            dataConnection = null; 
+        }
+        
+        if (chatRetryInterval) {
+            clearInterval(chatRetryInterval);
+            chatRetryInterval = null;
+        }
+        
         screenSharingActive = false;
-        screenBtn.classList.remove('bg-emerald-600'); updateScreenButtonVisibility();
+        screenBtn.classList.remove('bg-emerald-600'); 
+        updateScreenButtonVisibility();
         remotePeerId = null;
     }
 
+    // ============================================
+    // УПРАВЛЕНИЕ
+    // ============================================
     function toggleMic() {
         if (!localStream) return;
         isMicMuted = !isMicMuted;
@@ -653,7 +1005,9 @@
         const btn = document.getElementById('micBtn');
         btn.textContent = isMicMuted ? '🔇' : '🎤';
         btn.classList.toggle('bg-red-600', isMicMuted);
+        log(isMicMuted ? 'Микрофон выключен' : 'Микрофон включён', 'info');
     }
+    
     function toggleCamera() {
         if (!localStream || !hasVideo || screenSharingActive) return;
         isCamMuted = !isCamMuted;
@@ -661,12 +1015,39 @@
         const btn = document.getElementById('camBtn');
         btn.textContent = isCamMuted ? '📷❌' : '📷';
         btn.classList.toggle('bg-red-600', isCamMuted);
-        if (isCamMuted) { wavesCanvas.style.display = 'block'; localVideo.classList.add('hidden'); }
-        else { wavesCanvas.style.display = 'none'; localVideo.classList.remove('hidden'); }
+        
+        if (isCamMuted) { 
+            wavesCanvas.style.display = 'block'; 
+            localVideo.classList.add('hidden'); 
+        } else { 
+            wavesCanvas.style.display = 'none'; 
+            localVideo.classList.remove('hidden'); 
+        }
+        
         updateScreenButtonVisibility();
+        log(isCamMuted ? 'Камера выключена' : 'Камера включена', 'info');
     }
-    function copyId() { navigator.clipboard.writeText(myIdInput.value); log('ID скопирован', 'success'); }
+    
+    function copyId() {
+        const id = myIdInput.value;
+        if (id && id !== 'Подключение...') {
+            navigator.clipboard.writeText(id).then(() => {
+                log('✅ ID скопирован', 'success');
+                const orig = statusDiv.innerText;
+                statusDiv.innerText = '✅ ID скопирован!';
+                setTimeout(() => { statusDiv.innerText = orig; }, 2000);
+            }).catch(() => {
+                // Fallback для старых браузеров
+                myIdInput.select();
+                document.execCommand('copy');
+                log('✅ ID скопирован', 'success');
+            });
+        }
+    }
 
+    // ============================================
+    // ЗАГРУЗКА
+    // ============================================
     window.addEventListener('load', () => { 
         initPeer(); 
         requestCamera().then(() => {
@@ -674,7 +1055,13 @@
             window.addEventListener('resize', () => { resizeCanvas(); });
         });
     });
-    window.addEventListener('beforeunload', () => { if (localStream) localStream.getTracks().forEach(t => t.stop()); if (peer) peer.destroy(); stopWaves(); stopRingtone(); });
+    
+    window.addEventListener('beforeunload', () => { 
+        if (localStream) localStream.getTracks().forEach(t => t.stop()); 
+        if (peer) peer.destroy(); 
+        stopWaves(); 
+        stopRingtone(); 
+    });
 </script>
 </body>
 </html>
