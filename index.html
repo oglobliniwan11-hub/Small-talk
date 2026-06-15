@@ -67,40 +67,83 @@
             font-size: 1.6rem; cursor: pointer; border: none;
         }
         .control-btn:hover { transform: scale(1.05); background: #334155; }
-        .chat-panel {
-            background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px);
-            border-radius: 1.5rem; border: 1px solid rgba(255,255,255,0.1);
-            display: flex; flex-direction: column; height: 100%; min-height: 320px;
+        
+        /* Модальное окно чата */
+        .chat-modal {
+            position: fixed;
+            bottom: 90px;
+            right: 20px;
+            width: 320px;
+            height: 400px;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(16px);
+            border-radius: 1.5rem;
+            border: 1px solid rgba(255,255,255,0.2);
+            display: flex;
+            flex-direction: column;
+            z-index: 100;
+            box-shadow: 0 20px 35px -10px black;
         }
-        .chat-messages {
-            flex: 1; overflow-y: auto; padding: 0.75rem;
-            display: flex; flex-direction: column; gap: 0.6rem;
+        .chat-modal-header {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .chat-modal-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .chat-modal-input {
+            display: flex;
+            gap: 0.5rem;
+            padding: 0.75rem;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+        .chat-modal-input input {
+            flex: 1;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 2rem;
+            padding: 0.5rem 1rem;
+            color: white;
+            outline: none;
+        }
+        .chat-modal-input button {
+            background: #3b82f6;
+            border-radius: 2rem;
+            padding: 0.5rem 1rem;
+            font-weight: 600;
+        }
+        .close-chat {
+            cursor: pointer;
+            font-size: 1.2rem;
+            opacity: 0.7;
         }
         .chat-message {
-            max-width: 85%; padding: 0.5rem 1rem; border-radius: 1.25rem;
-            font-size: 0.85rem; word-break: break-word;
+            max-width: 85%;
+            padding: 0.5rem 1rem;
+            border-radius: 1.25rem;
+            font-size: 0.85rem;
+            word-break: break-word;
         }
         .chat-message.own {
-            align-self: flex-end; background: #3b82f6; color: white;
+            align-self: flex-end;
+            background: #3b82f6;
+            color: white;
             border-bottom-right-radius: 0.25rem;
         }
         .chat-message.other {
-            align-self: flex-start; background: #334155; color: #f1f5f9;
+            align-self: flex-start;
+            background: #334155;
+            color: #f1f5f9;
             border-bottom-left-radius: 0.25rem;
-        }
-        .chat-input-area {
-            display: flex; gap: 0.6rem; padding: 0.75rem;
-            border-top: 1px solid rgba(255,255,255,0.1);
-        }
-        .chat-input {
-            flex: 1; background: #0f172a; border: 1px solid #334155;
-            border-radius: 2rem; padding: 0.6rem 1rem; color: white; outline: none;
-        }
-        .send-btn { background: #3b82f6; border-radius: 2rem; padding: 0.5rem 1.2rem; font-weight: 600; cursor: pointer; }
-        @media (min-width: 1024px) { .main-grid { display: grid; grid-template-columns: 1fr 320px; gap: 1.5rem; } }
-        .debug-log {
-            max-height: 130px; overflow-y: auto; font-family: monospace; font-size: 0.7rem;
-            background: rgba(0,0,0,0.4); border-radius: 1rem; padding: 0.6rem;
         }
         .hidden { display: none; }
         .wave-title {
@@ -115,6 +158,10 @@
             transition: 0.2s; cursor: pointer; border: none;
         }
         .round-call-btn:hover { background-color: #059669; transform: scale(1.05); }
+        .debug-log {
+            max-height: 130px; overflow-y: auto; font-family: monospace; font-size: 0.7rem;
+            background: rgba(0,0,0,0.4); border-radius: 1rem; padding: 0.6rem;
+        }
     </style>
 </head>
 <body>
@@ -178,18 +225,25 @@
                 <button id="micBtn" onclick="toggleMic()" class="control-btn">🎤</button>
                 <button id="camBtn" onclick="toggleCamera()" class="control-btn hidden">📷</button>
                 <button id="screenBtn" onclick="toggleScreenShare()" class="control-btn hidden" title="Показать экран">🖥️</button>
+                <button id="chatBtn" onclick="toggleChatModal()" class="control-btn" title="Чат">💬</button>
                 <button id="hangupBtn" onclick="endCall()" class="control-btn bg-red-600 hover:bg-red-500" style="background:#dc2626;">📞</button>
             </div>
         </div>
+    </div>
+</div>
 
-        <div id="chatPanel" class="chat-panel hidden">
-            <div class="px-4 py-2 border-b border-slate-700 font-medium text-sm">💬 Чат</div>
-            <div id="chatMessages" class="chat-messages"><div class="text-center text-xs text-slate-500 p-3">Нет сообщений</div></div>
-            <div class="chat-input-area">
-                <input type="text" id="chatInput" class="chat-input" placeholder="Сообщение..." maxlength="500">
-                <button onclick="sendChatMessage()" class="send-btn">→</button>
-            </div>
-        </div>
+<!-- Модальное окно чата -->
+<div id="chatModal" class="chat-modal hidden">
+    <div class="chat-modal-header">
+        <span>💬 Чат</span>
+        <span class="close-chat" onclick="toggleChatModal()">✕</span>
+    </div>
+    <div id="chatModalMessages" class="chat-modal-messages">
+        <div class="text-center text-xs text-slate-500 p-3">Нет сообщений</div>
+    </div>
+    <div class="chat-modal-input">
+        <input type="text" id="chatModalInput" placeholder="Сообщение..." maxlength="500">
+        <button onclick="sendChatMessageModal()">→</button>
     </div>
 </div>
 
@@ -198,14 +252,16 @@
     let isMicMuted = false, isCamMuted = false, hasVideo = false, screenSharingActive = false;
     let originalVideoTrack = null, ringInterval = null, audioCtx = null, analyser = null, animationId = null;
 
+    // DOM
     const myIdInput = document.getElementById('myId'), remoteIdInput = document.getElementById('remoteId');
     const localVideo = document.getElementById('localVideo'), remoteVideo = document.getElementById('remoteVideo');
     const videoContainer = document.getElementById('videoContainer'), controlsDiv = document.getElementById('controls');
     const callingOverlay = document.getElementById('callingOverlay'), cubesContainer = document.getElementById('cubesVisual');
     const audioOnlyPlaceholder = document.getElementById('audioOnlyPlaceholder'), statusDiv = document.getElementById('statusMessage');
-    const debugLog = document.getElementById('debugLog'), chatPanel = document.getElementById('chatPanel');
-    const chatMessagesDiv = document.getElementById('chatMessages'), chatInput = document.getElementById('chatInput');
-    const screenBtn = document.getElementById('screenBtn');
+    const debugLog = document.getElementById('debugLog'), screenBtn = document.getElementById('screenBtn');
+    const chatModal = document.getElementById('chatModal');
+    const chatModalMessages = document.getElementById('chatModalMessages');
+    const chatModalInput = document.getElementById('chatModalInput');
 
     function log(msg, type = 'info') {
         debugLog.classList.remove('hidden');
@@ -217,6 +273,64 @@
         console.log(msg);
     }
 
+    // --- Чат (модальное окно) ---
+    function toggleChatModal() {
+        if (chatModal.classList.contains('hidden')) {
+            chatModal.classList.remove('hidden');
+        } else {
+            chatModal.classList.add('hidden');
+        }
+    }
+
+    function addChatMessageToModal(text, isOwn = false) {
+        if (chatModalMessages.children.length === 1 && chatModalMessages.children[0].innerText.includes('Нет сообщений')) {
+            chatModalMessages.innerHTML = '';
+        }
+        const div = document.createElement('div');
+        div.className = `chat-message ${isOwn ? 'own' : 'other'}`;
+        div.innerText = text;
+        chatModalMessages.appendChild(div);
+        chatModalMessages.scrollTop = chatModalMessages.scrollHeight;
+    }
+
+    function sendChatMessageModal() {
+        const txt = chatModalInput.value.trim();
+        if (!txt) return;
+        if (!dataConnection || dataConnection.open === false) {
+            log('Чат не активен', 'error');
+            addChatMessageToModal('❌ Нет соединения', true);
+            return;
+        }
+        dataConnection.send({ type: 'chat', message: txt });
+        addChatMessageToModal(txt, true);
+        chatModalInput.value = '';
+    }
+
+    function setupDataConnection(conn) {
+        if (dataConnection === conn) return;
+        if (dataConnection) {
+            dataConnection.close();
+        }
+        dataConnection = conn;
+        dataConnection.on('open', () => {
+            log('Чат соединение открыто', 'success');
+            addChatMessageToModal('📡 Чат готов', false);
+        });
+        dataConnection.on('data', (d) => {
+            if (d && d.type === 'chat') {
+                addChatMessageToModal(d.message, false);
+            }
+        });
+        dataConnection.on('close', () => {
+            log('Чат закрыт', 'info');
+            if (dataConnection === conn) dataConnection = null;
+        });
+        if (dataConnection.open) {
+            addChatMessageToModal('📡 Чат готов', false);
+        }
+    }
+
+    // --- Визуализация голоса ---
     async function initVoiceVisualization(stream) {
         if (animationId) cancelAnimationFrame(animationId);
         if (audioCtx) await audioCtx.close();
@@ -258,6 +372,7 @@
     }
     function stopVoiceVisualization() { if (animationId) cancelAnimationFrame(animationId); if (audioCtx) audioCtx.close().catch(()=>{}); audioCtx = null; }
 
+    // --- Звук звонка ---
     function playRingtone() {
         stopRingtone();
         try {
@@ -280,52 +395,12 @@
     }
     function stopRingtone() { if (ringInterval) clearInterval(ringInterval); if (window._ringCtx) window._ringCtx.close().catch(()=>{}); window._ringCtx = null; }
 
-    function addChatMessage(text, isOwn = false) {
-        if (chatMessagesDiv.children.length === 1 && chatMessagesDiv.children[0].innerText.includes('Нет сообщений')) chatMessagesDiv.innerHTML = '';
-        const div = document.createElement('div');
-        div.className = `chat-message ${isOwn ? 'own' : 'other'}`;
-        div.innerText = text;
-        chatMessagesDiv.appendChild(div);
-        chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
-    }
-    function sendChatMessage() {
-        const txt = chatInput.value.trim();
-        if (!txt || !dataConnection || dataConnection.open === false) {
-            log('Чат не активен', 'error');
-            return;
-        }
-        dataConnection.send({ type: 'chat', message: txt });
-        addChatMessage(txt, true);
-        chatInput.value = '';
-    }
-    function setupDataConnection(conn) {
-        if (dataConnection === conn) return;
-        if (dataConnection) dataConnection.close();
-        dataConnection = conn;
-        dataConnection.on('open', () => { 
-            chatPanel.classList.remove('hidden'); 
-            log('Чат готов', 'success');
-            // Добавляем системное сообщение о готовности чата
-            addChatMessage('Чат подключён', false);
-        });
-        dataConnection.on('data', (d) => { if (d?.type === 'chat') addChatMessage(d.message, false); });
-        dataConnection.on('close', () => { 
-            if (dataConnection === conn) dataConnection = null;
-            chatPanel.classList.add('hidden');
-            log('Чат закрыт', 'info');
-        });
-        if (dataConnection.open) {
-            chatPanel.classList.remove('hidden');
-            addChatMessage('Чат подключён', false);
-        }
-    }
-
+    // --- Демонстрация экрана ---
     function isScreenShareSupported() { return !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia); }
     function updateScreenButtonVisibility() {
         if (!controlsDiv.classList.contains('hidden') && hasVideo && !screenSharingActive && isScreenShareSupported()) screenBtn.classList.remove('hidden');
         else screenBtn.classList.add('hidden');
     }
-
     async function toggleScreenShare() {
         if (!currentCall) { log('Нет активного звонка', 'error'); return; }
         if (!localStream) { log('Нет медиапотока', 'error'); return; }
@@ -381,6 +456,7 @@
         } catch(e) { log('Ошибка остановки экрана: ' + e.message, 'error'); }
     }
 
+    // --- Медиа ---
     async function requestCamera() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -413,20 +489,25 @@
         } catch(e) { log('Нет доступа к микрофону', 'error'); return false; }
     }
 
+    // --- PeerJS ---
     function initPeer() {
         peer = new Peer({ config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] } });
         peer.on('open', id => { myIdInput.value = id; statusDiv.innerText = '✅ ID готов'; log(`Ваш ID: ${id}`, 'success'); });
         peer.on('call', call => { playRingtone(); if (confirm('Входящий звонок. Принять?')) { stopRingtone(); answerCall(call); } else { stopRingtone(); call.close(); } });
-        peer.on('connection', conn => { 
+        peer.on('connection', conn => {
             log(`Входящее DataConnection от ${conn.peer}`, 'info');
-            if (!dataConnection) setupDataConnection(conn);
-            else {
-                // Если уже есть соединение, но пришло новое – возможно, нужно заменить
-                log('Дополнительное соединение, игнорируем', 'info');
+            // Принимаем входящее соединение для чата
+            if (!dataConnection) {
+                setupDataConnection(conn);
+            } else {
+                // Если уже есть, заменяем (на случай, если старое не работает)
+                log('Замена существующего чат-соединения', 'info');
+                setupDataConnection(conn);
             }
         });
         peer.on('error', err => log(`Peer ошибка: ${err.type}`, 'error'));
     }
+
     function startCall() {
         const rid = remoteIdInput.value.trim();
         if (!rid) return alert('Введите ID собеседника');
@@ -434,23 +515,27 @@
         videoContainer.style.display = 'block'; controlsDiv.classList.remove('hidden'); callingOverlay.classList.remove('hidden');
         currentCall = peer.call(rid, localStream);
         handleCall(currentCall);
-        // Создаём DataConnection для чата (обязательно)
-        const conn = peer.connect(rid, { label: 'chat', reliable: true });
-        setupDataConnection(conn);
+        // Создаём DataConnection для чата (только если его ещё нет)
+        if (!dataConnection) {
+            const conn = peer.connect(rid, { label: 'chat', reliable: true });
+            setupDataConnection(conn);
+        } else {
+            log('Чат уже есть', 'info');
+        }
         updateScreenButtonVisibility();
-        log('Исходящий звонок, чат создаётся', 'info');
+        log('Исходящий звонок', 'info');
     }
+
     function answerCall(call) {
         if (!localStream) requestAudioOnly().then(() => call.answer(localStream));
         else call.answer(localStream);
         videoContainer.style.display = 'block'; controlsDiv.classList.remove('hidden');
         currentCall = call; handleCall(call);
-        // Создаём DataConnection для чата (обязательно)
-        const conn = peer.connect(call.peer, { label: 'chat', reliable: true });
-        setupDataConnection(conn);
+        // Не создаём своё DataConnection, ждём входящее от звонящего (обработается в peer.on('connection'))
         updateScreenButtonVisibility();
-        log('Входящий звонок принят, чат создаётся', 'info');
+        log('Входящий звонок принят', 'info');
     }
+
     function handleCall(call) {
         call.on('stream', remoteStream => {
             remoteVideo.srcObject = remoteStream;
@@ -462,16 +547,22 @@
         call.on('close', () => endCallUI());
         call.on('error', () => endCallUI());
     }
+
     function endCall() { if (currentCall) currentCall.close(); if (dataConnection) dataConnection.close(); endCallUI(); }
     function endCallUI() {
         remoteVideo.srcObject = null; videoContainer.style.display = 'none'; controlsDiv.classList.add('hidden');
-        callingOverlay.classList.add('hidden'); chatPanel.classList.add('hidden');
-        chatMessagesDiv.innerHTML = '<div class="text-center text-xs text-slate-500 p-3">Нет сообщений</div>';
+        callingOverlay.classList.add('hidden');
+        chatModal.classList.add('hidden'); // закрываем окно чата
+        // Очищаем историю сообщений в модалке
+        chatModalMessages.innerHTML = '<div class="text-center text-xs text-slate-500 p-3">Нет сообщений</div>';
         statusDiv.innerText = 'Звонок завершён';
         if (!hasVideo) cubesContainer.style.display = 'flex'; else cubesContainer.style.display = 'none';
-        stopRingtone(); currentCall = null; dataConnection = null; screenSharingActive = false;
+        stopRingtone(); currentCall = null; 
+        if (dataConnection) { dataConnection.close(); dataConnection = null; }
+        screenSharingActive = false;
         screenBtn.classList.remove('bg-emerald-600'); updateScreenButtonVisibility();
     }
+
     function toggleMic() {
         if (!localStream) return;
         isMicMuted = !isMicMuted;
