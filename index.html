@@ -41,7 +41,6 @@
         }
         @media (max-width: 640px) { .local-video { width: 80px; height: 80px; } }
         
-        /* Canvas для волн (вместо кубов) */
         .waves-canvas {
             position: absolute;
             inset: 0;
@@ -66,7 +65,6 @@
         }
         .control-btn:hover { transform: scale(1.05); background: #334155; }
         
-        /* Модальное окно чата */
         .chat-modal {
             position: fixed;
             bottom: 90px;
@@ -161,6 +159,14 @@
             max-height: 130px; overflow-y: auto; font-family: monospace; font-size: 0.7rem;
             background: rgba(0,0,0,0.4); border-radius: 1rem; padding: 0.6rem;
         }
+        .reconnect-chat-btn {
+            background: #3b82f6;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            cursor: pointer;
+            margin-left: 8px;
+        }
     </style>
 </head>
 <body>
@@ -204,7 +210,6 @@
             <div class="video-container" id="videoContainer" style="display: none;">
                 <video id="remoteVideo" class="remote-video" autoplay playsinline></video>
                 <video id="localVideo" class="local-video hidden" autoplay playsinline muted></video>
-                <!-- Canvas для волн -->
                 <canvas id="wavesCanvas" class="waves-canvas" width="800" height="450"></canvas>
                 <div id="audioOnlyPlaceholder" class="audio-only-placeholder hidden">
                     <div class="text-6xl opacity-70">🎤</div>
@@ -228,10 +233,9 @@
     </div>
 </div>
 
-<!-- Модальное окно чата -->
 <div id="chatModal" class="chat-modal hidden">
     <div class="chat-modal-header">
-        <span>💬 Чат</span>
+        <span>💬 Чат <span id="chatStatusBadge" style="font-size:0.7rem; background:#334155; padding:2px 6px; border-radius:20px; margin-left:8px;">⚫ откл</span></span>
         <span class="close-chat" onclick="toggleChatModal()">✕</span>
     </div>
     <div id="chatModalMessages" class="chat-modal-messages">
@@ -241,13 +245,18 @@
         <input type="text" id="chatModalInput" placeholder="Сообщение..." maxlength="500">
         <button onclick="sendChatMessageModal()">→</button>
     </div>
+    <div class="text-center p-2">
+        <button id="retryChatBtn" class="reconnect-chat-btn hidden" onclick="forceReconnectChat()">⟳ Переподключить чат</button>
+    </div>
 </div>
 
 <script>
     let peer = null, localStream = null, currentCall = null, dataConnection = null;
     let isMicMuted = false, isCamMuted = false, hasVideo = false, screenSharingActive = false;
     let originalVideoTrack = null, ringInterval = null;
-    let canvasAnimId = null; // для волн
+    let canvasAnimId = null;
+    let remotePeerId = null; // ID собеседника для переподключения чата
+    let chatRetryInterval = null;
 
     // DOM
     const myIdInput = document.getElementById('myId'), remoteIdInput = document.getElementById('remoteId');
@@ -261,6 +270,8 @@
     const chatModal = document.getElementById('chatModal');
     const chatModalMessages = document.getElementById('chatModalMessages');
     const chatModalInput = document.getElementById('chatModalInput');
+    const chatStatusBadge = document.getElementById('chatStatusBadge');
+    const retryChatBtn = document.getElementById('retryChatBtn');
 
     function log(msg, type = 'info') {
         debugLog.classList.remove('hidden');
@@ -272,8 +283,8 @@
         console.log(msg);
     }
 
-    // -------- Волны на canvas (хаотичные бегающие линии по контуру) ----------
-    let wavePoints = []; // массив точек для линий
+    // --- Волны ---
+    let wavePoints = [];
     let wavePhase = 0;
     let waveSpeed = 0.02;
     
@@ -284,37 +295,22 @@
         wavesCanvas.width = width;
         wavesCanvas.height = height;
         
-        // Генерируем случайные контрольные точки по периметру (0-1 координаты)
         const perimeterPoints = [];
         const numPoints = 40;
         for (let i = 0; i < numPoints; i++) {
-            let t = i / numPoints; // 0..1 вдоль периметра
+            let t = i / numPoints;
             let x, y;
-            if (t < 0.25) { // верхняя сторона
-                x = t * 4;
-                y = 0;
-            } else if (t < 0.5) { // правая
-                x = 1;
-                y = (t - 0.25) * 4;
-            } else if (t < 0.75) { // нижняя
-                x = 1 - (t - 0.5) * 4;
-                y = 1;
-            } else { // левая
-                x = 0;
-                y = 1 - (t - 0.75) * 4;
-            }
+            if (t < 0.25) { x = t * 4; y = 0; }
+            else if (t < 0.5) { x = 1; y = (t - 0.25) * 4; }
+            else if (t < 0.75) { x = 1 - (t - 0.5) * 4; y = 1; }
+            else { x = 0; y = 1 - (t - 0.75) * 4; }
             perimeterPoints.push({ x: x * width, y: y * height });
         }
         
-        // Создаём несколько слоёв смещённых точек
         wavePoints = [];
         for (let layer = 0; layer < 3; layer++) {
-            let offset = layer * 0.3;
             let points = perimeterPoints.map(p => ({
-                x: p.x,
-                y: p.y,
-                origX: p.x,
-                origY: p.y,
+                origX: p.x, origY: p.y,
                 amp: 5 + layer * 8,
                 freq: 0.5 + layer * 0.3
             }));
@@ -328,18 +324,14 @@
             }
             const ctx = wavesCanvas.getContext('2d');
             ctx.clearRect(0, 0, wavesCanvas.width, wavesCanvas.height);
-            
             wavePhase += waveSpeed;
             for (let layer = 0; layer < wavePoints.length; layer++) {
                 const points = wavePoints[layer];
                 ctx.beginPath();
                 ctx.strokeStyle = `rgba(96, 165, 250, ${0.2 + layer * 0.2})`;
                 ctx.lineWidth = 2 + layer;
-                ctx.lineCap = 'round';
-                
                 for (let i = 0; i < points.length; i++) {
                     const p = points[i];
-                    // хаотичное смещение: синус от времени + случайный сдвиг
                     const angle = wavePhase * (1 + layer) + i * 0.5;
                     const offsetX = Math.sin(angle) * p.amp * 0.7;
                     const offsetY = Math.cos(angle * 0.7) * p.amp * 0.5;
@@ -349,15 +341,12 @@
                     else ctx.lineTo(x, y);
                 }
                 ctx.stroke();
-                // Замыкаем контур
                 const first = points[0];
-                const last = points[points.length-1];
                 ctx.lineTo(first.origX + Math.sin(wavePhase) * first.amp, first.origY + Math.cos(wavePhase*0.7) * first.amp);
                 ctx.stroke();
             }
             canvasAnimId = requestAnimationFrame(drawWaves);
         }
-        
         drawWaves();
     }
     
@@ -369,7 +358,6 @@
         }
     }
     
-    // При изменении размера контейнера пересоздаём волны
     function resizeCanvas() {
         if (!wavesCanvas) return;
         const rect = wavesCanvas.parentElement.getBoundingClientRect();
@@ -377,13 +365,18 @@
         wavesCanvas.height = rect.height;
         initWaves();
     }
-    
-    // -------- Чат ----------
-    function toggleChatModal() {
-        if (chatModal.classList.contains('hidden')) {
-            chatModal.classList.remove('hidden');
+
+    // --- Чат ---
+    function updateChatStatus(connected) {
+        if (connected) {
+            chatStatusBadge.innerHTML = '🟢 онлайн';
+            chatStatusBadge.style.background = '#10b981';
+            retryChatBtn.classList.add('hidden');
         } else {
-            chatModal.classList.add('hidden');
+            chatStatusBadge.innerHTML = '🔴 офлайн';
+            chatStatusBadge.style.background = '#ef4444';
+            if (currentCall && remotePeerId) retryChatBtn.classList.remove('hidden');
+            else retryChatBtn.classList.add('hidden');
         }
     }
 
@@ -404,6 +397,7 @@
         if (!dataConnection || dataConnection.open === false) {
             log('Чат не активен', 'error');
             addChatMessageToModal('❌ Нет соединения', true);
+            updateChatStatus(false);
             return;
         }
         dataConnection.send({ type: 'chat', message: txt });
@@ -411,16 +405,34 @@
         chatModalInput.value = '';
     }
 
-    // Установка DataConnection (только для инициатора или для принимающей стороны)
+    // Принудительное переподключение чата
+    function forceReconnectChat() {
+        if (!currentCall || !remotePeerId) {
+            log('Нет активного звонка или ID собеседника', 'error');
+            return;
+        }
+        if (dataConnection) {
+            dataConnection.close();
+            dataConnection = null;
+        }
+        log('Повторное создание чат-соединения...', 'info');
+        const conn = peer.connect(remotePeerId, { label: 'chat', reliable: true });
+        setupDataConnection(conn, true);
+    }
+
     function setupDataConnection(conn, isInitiator = false) {
         if (dataConnection === conn) return;
         if (dataConnection) {
             dataConnection.close();
         }
         dataConnection = conn;
+        updateChatStatus(false);
+        
         dataConnection.on('open', () => {
             log('Чат соединение открыто', 'success');
             addChatMessageToModal('📡 Чат готов', false);
+            updateChatStatus(true);
+            if (chatRetryInterval) clearInterval(chatRetryInterval);
         });
         dataConnection.on('data', (d) => {
             if (d && d.type === 'chat') {
@@ -430,29 +442,37 @@
         dataConnection.on('close', () => {
             log('Чат закрыт', 'info');
             if (dataConnection === conn) dataConnection = null;
+            updateChatStatus(false);
         });
-        dataConnection.on('error', (err) => log('Ошибка чата: ' + err, 'error'));
+        dataConnection.on('error', (err) => {
+            log('Ошибка чата: ' + err, 'error');
+            updateChatStatus(false);
+        });
         
         if (dataConnection.open) {
+            updateChatStatus(true);
             addChatMessageToModal('📡 Чат готов', false);
         } else if (isInitiator) {
-            // Повторные попытки открыть соединение (если не открылось)
+            // Повторные попытки
+            if (chatRetryInterval) clearInterval(chatRetryInterval);
             let attempts = 0;
-            const interval = setInterval(() => {
+            chatRetryInterval = setInterval(() => {
                 if (dataConnection && dataConnection.open) {
-                    clearInterval(interval);
+                    clearInterval(chatRetryInterval);
+                    updateChatStatus(true);
                     addChatMessageToModal('📡 Чат готов', false);
-                } else if (attempts >= 15) {
-                    clearInterval(interval);
+                } else if (attempts >= 12) {
+                    clearInterval(chatRetryInterval);
                     log('Не удалось открыть чат', 'error');
                     addChatMessageToModal('❌ Чат не подключился', false);
+                    updateChatStatus(false);
                 }
                 attempts++;
             }, 1000);
         }
     }
 
-    // -------- Звук звонка ----------
+    // --- Звук звонка ---
     function playRingtone() {
         stopRingtone();
         try {
@@ -475,7 +495,7 @@
     }
     function stopRingtone() { if (ringInterval) clearInterval(ringInterval); if (window._ringCtx) window._ringCtx.close().catch(()=>{}); window._ringCtx = null; }
 
-    // -------- Демонстрация экрана ----------
+    // --- Демонстрация экрана ---
     function isScreenShareSupported() { return !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia); }
     function updateScreenButtonVisibility() {
         if (!controlsDiv.classList.contains('hidden') && hasVideo && !screenSharingActive && isScreenShareSupported()) screenBtn.classList.remove('hidden');
@@ -536,7 +556,7 @@
         } catch(e) { log('Ошибка остановки экрана: ' + e.message, 'error'); }
     }
 
-    // -------- Медиа ----------
+    // --- Медиа ---
     async function requestCamera() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -567,7 +587,15 @@
         } catch(e) { log('Нет доступа к микрофону', 'error'); return false; }
     }
 
-    // -------- PeerJS ----------
+    function toggleChatModal() {
+        if (chatModal.classList.contains('hidden')) {
+            chatModal.classList.remove('hidden');
+        } else {
+            chatModal.classList.add('hidden');
+        }
+    }
+
+    // --- PeerJS ---
     function initPeer() {
         peer = new Peer({ config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] } });
         peer.on('open', id => { myIdInput.value = id; statusDiv.innerText = '✅ ID готов'; log(`Ваш ID: ${id}`, 'success'); });
@@ -575,9 +603,10 @@
         peer.on('connection', conn => {
             log(`Входящее DataConnection от ${conn.peer}`, 'info');
             if (!dataConnection) {
-                setupDataConnection(conn, false); // принимаем соединение от звонящего
+                setupDataConnection(conn, false);
             } else {
-                log('DataConnection уже есть, игнорируем новое', 'info');
+                log('Замена DataConnection', 'info');
+                setupDataConnection(conn, false);
             }
         });
         peer.on('error', err => log(`Peer ошибка: ${err.type}`, 'error'));
@@ -587,11 +616,11 @@
         const rid = remoteIdInput.value.trim();
         if (!rid) return alert('Введите ID собеседника');
         if (!localStream) return alert('Разрешите доступ к микрофону/камере');
+        remotePeerId = rid;
         videoContainer.style.display = 'block'; controlsDiv.classList.remove('hidden'); callingOverlay.classList.remove('hidden');
         currentCall = peer.call(rid, localStream);
         handleCall(currentCall);
         
-        // Инициатор создаёт DataConnection
         if (!dataConnection) {
             const conn = peer.connect(rid, { label: 'chat', reliable: true });
             setupDataConnection(conn, true);
@@ -602,11 +631,11 @@
     }
 
     function answerCall(call) {
+        remotePeerId = call.peer;
         if (!localStream) requestAudioOnly().then(() => call.answer(localStream));
         else call.answer(localStream);
         videoContainer.style.display = 'block'; controlsDiv.classList.remove('hidden');
         currentCall = call; handleCall(call);
-        // Принимающая сторона НЕ создаёт DataConnection, ждёт от звонящего (peer.on('connection'))
         updateScreenButtonVisibility();
         log('Входящий звонок принят', 'info');
     }
@@ -616,7 +645,6 @@
             remoteVideo.srcObject = remoteStream;
             callingOverlay.classList.add('hidden');
             statusDiv.innerText = '🟢 В эфире';
-            // Если у собеседника нет видео, показываем волны
             if (remoteStream.getVideoTracks().length === 0 || remoteStream.getVideoTracks()[0].readyState === 'ended') {
                 wavesCanvas.style.display = 'block';
             } else {
@@ -637,8 +665,11 @@
         if (!hasVideo) wavesCanvas.style.display = 'block'; else wavesCanvas.style.display = 'none';
         stopRingtone(); currentCall = null; 
         if (dataConnection) { dataConnection.close(); dataConnection = null; }
+        if (chatRetryInterval) clearInterval(chatRetryInterval);
         screenSharingActive = false;
         screenBtn.classList.remove('bg-emerald-600'); updateScreenButtonVisibility();
+        remotePeerId = null;
+        updateChatStatus(false);
     }
 
     function toggleMic() {
