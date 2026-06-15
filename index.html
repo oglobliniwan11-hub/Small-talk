@@ -41,7 +41,7 @@
         }
         @media (max-width: 640px) { .local-video { width: 80px; height: 80px; } }
         
-        /* Анимированные волны */
+        /* Canvas для волн (вместо кубов) */
         .waves-canvas {
             position: absolute;
             inset: 0;
@@ -49,7 +49,9 @@
             height: 100%;
             z-index: 5;
             pointer-events: none;
+            border-radius: inherit;
         }
+        
         .audio-only-placeholder {
             position: absolute; inset: 0;
             display: flex; align-items: center; justify-content: center;
@@ -116,6 +118,7 @@
             border-radius: 2rem;
             padding: 0.5rem 1rem;
             font-weight: 600;
+            cursor: pointer;
         }
         .close-chat {
             cursor: pointer;
@@ -201,7 +204,8 @@
             <div class="video-container" id="videoContainer" style="display: none;">
                 <video id="remoteVideo" class="remote-video" autoplay playsinline></video>
                 <video id="localVideo" class="local-video hidden" autoplay playsinline muted></video>
-                <canvas id="wavesCanvas" class="waves-canvas"></canvas>
+                <!-- Canvas для волн -->
+                <canvas id="wavesCanvas" class="waves-canvas" width="800" height="450"></canvas>
                 <div id="audioOnlyPlaceholder" class="audio-only-placeholder hidden">
                     <div class="text-6xl opacity-70">🎤</div>
                 </div>
@@ -243,21 +247,20 @@
     let peer = null, localStream = null, currentCall = null, dataConnection = null;
     let isMicMuted = false, isCamMuted = false, hasVideo = false, screenSharingActive = false;
     let originalVideoTrack = null, ringInterval = null;
-    let audioCtx = null, analyser = null, animationId = null;
-    let remoteStream = null;
+    let canvasAnimId = null; // для волн
 
     // DOM
     const myIdInput = document.getElementById('myId'), remoteIdInput = document.getElementById('remoteId');
     const localVideo = document.getElementById('localVideo'), remoteVideo = document.getElementById('remoteVideo');
     const videoContainer = document.getElementById('videoContainer'), controlsDiv = document.getElementById('controls');
     const callingOverlay = document.getElementById('callingOverlay');
+    const wavesCanvas = document.getElementById('wavesCanvas');
     const audioOnlyPlaceholder = document.getElementById('audioOnlyPlaceholder');
     const statusDiv = document.getElementById('statusMessage');
     const debugLog = document.getElementById('debugLog'), screenBtn = document.getElementById('screenBtn');
     const chatModal = document.getElementById('chatModal');
     const chatModalMessages = document.getElementById('chatModalMessages');
     const chatModalInput = document.getElementById('chatModalInput');
-    const wavesCanvas = document.getElementById('wavesCanvas');
 
     function log(msg, type = 'info') {
         debugLog.classList.remove('hidden');
@@ -269,78 +272,113 @@
         console.log(msg);
     }
 
-    // --- Анимированные волны (canvas) ---
-    let waveAnimationId = null;
-    let waveOffset = 0;
-    function startWavesAnimation() {
-        if (waveAnimationId) cancelAnimationFrame(waveAnimationId);
-        const canvas = wavesCanvas;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        const container = canvas.parentElement;
-        function resize() {
-            const rect = container.getBoundingClientRect();
-            canvas.width = rect.width;
-            canvas.height = rect.height;
-        }
-        resize();
-        const observer = new ResizeObserver(() => resize());
-        observer.observe(container);
-        let time = 0;
-        function drawWaves() {
-            if (!container || container.style.display === 'none') {
-                waveAnimationId = requestAnimationFrame(drawWaves);
-                return;
-            }
-            const w = canvas.width, h = canvas.height;
-            if (w === 0 || h === 0) {
-                waveAnimationId = requestAnimationFrame(drawWaves);
-                return;
-            }
-            ctx.clearRect(0, 0, w, h);
-            ctx.strokeStyle = '#3b82f6';
-            ctx.lineWidth = 2;
-            ctx.shadowBlur = 0;
-            // Рисуем несколько синусоид с разной частотой и фазой
-            for (let i = 0; i < 4; i++) {
-                const amplitude = 15 + Math.sin(time * 0.003 + i) * 5;
-                const frequency = 0.008 + i * 0.002;
-                const offsetY = h * 0.3 + i * 25;
-                ctx.beginPath();
-                for (let x = 0; x <= w; x += 5) {
-                    const y = offsetY + Math.sin(x * frequency + time * 0.005 + i) * amplitude;
-                    if (x === 0) ctx.moveTo(x, y);
-                    else ctx.lineTo(x, y);
-                }
-                ctx.strokeStyle = `rgba(59, 130, 246, ${0.3 + i * 0.15})`;
-                ctx.stroke();
-            }
-            for (let i = 0; i < 3; i++) {
-                const amplitude = 10 + Math.sin(time * 0.004 + i) * 3;
-                const frequency = 0.01 - i * 0.002;
-                const offsetY = h * 0.7 + i * 20;
-                ctx.beginPath();
-                for (let x = 0; x <= w; x += 5) {
-                    const y = offsetY + Math.sin(x * frequency + time * 0.008 + i) * amplitude;
-                    if (x === 0) ctx.moveTo(x, y);
-                    else ctx.lineTo(x, y);
-                }
-                ctx.strokeStyle = `rgba(16, 185, 129, ${0.3 + i * 0.15})`;
-                ctx.stroke();
-            }
-            time++;
-            waveAnimationId = requestAnimationFrame(drawWaves);
-        }
-        drawWaves();
-        return () => { if (waveAnimationId) cancelAnimationFrame(waveAnimationId); observer.disconnect(); };
-    }
-    function stopWavesAnimation() {
-        if (waveAnimationId) cancelAnimationFrame(waveAnimationId);
+    // -------- Волны на canvas (хаотичные бегающие линии по контуру) ----------
+    let wavePoints = []; // массив точек для линий
+    let wavePhase = 0;
+    let waveSpeed = 0.02;
+    
+    function initWaves() {
+        if (!wavesCanvas) return;
         const ctx = wavesCanvas.getContext('2d');
-        if (ctx) ctx.clearRect(0, 0, wavesCanvas.width, wavesCanvas.height);
+        let width = wavesCanvas.clientWidth, height = wavesCanvas.clientHeight;
+        wavesCanvas.width = width;
+        wavesCanvas.height = height;
+        
+        // Генерируем случайные контрольные точки по периметру (0-1 координаты)
+        const perimeterPoints = [];
+        const numPoints = 40;
+        for (let i = 0; i < numPoints; i++) {
+            let t = i / numPoints; // 0..1 вдоль периметра
+            let x, y;
+            if (t < 0.25) { // верхняя сторона
+                x = t * 4;
+                y = 0;
+            } else if (t < 0.5) { // правая
+                x = 1;
+                y = (t - 0.25) * 4;
+            } else if (t < 0.75) { // нижняя
+                x = 1 - (t - 0.5) * 4;
+                y = 1;
+            } else { // левая
+                x = 0;
+                y = 1 - (t - 0.75) * 4;
+            }
+            perimeterPoints.push({ x: x * width, y: y * height });
+        }
+        
+        // Создаём несколько слоёв смещённых точек
+        wavePoints = [];
+        for (let layer = 0; layer < 3; layer++) {
+            let offset = layer * 0.3;
+            let points = perimeterPoints.map(p => ({
+                x: p.x,
+                y: p.y,
+                origX: p.x,
+                origY: p.y,
+                amp: 5 + layer * 8,
+                freq: 0.5 + layer * 0.3
+            }));
+            wavePoints.push(points);
+        }
+        
+        function drawWaves() {
+            if (!wavesCanvas || wavesCanvas.style.display === 'none') {
+                if (canvasAnimId) cancelAnimationFrame(canvasAnimId);
+                return;
+            }
+            const ctx = wavesCanvas.getContext('2d');
+            ctx.clearRect(0, 0, wavesCanvas.width, wavesCanvas.height);
+            
+            wavePhase += waveSpeed;
+            for (let layer = 0; layer < wavePoints.length; layer++) {
+                const points = wavePoints[layer];
+                ctx.beginPath();
+                ctx.strokeStyle = `rgba(96, 165, 250, ${0.2 + layer * 0.2})`;
+                ctx.lineWidth = 2 + layer;
+                ctx.lineCap = 'round';
+                
+                for (let i = 0; i < points.length; i++) {
+                    const p = points[i];
+                    // хаотичное смещение: синус от времени + случайный сдвиг
+                    const angle = wavePhase * (1 + layer) + i * 0.5;
+                    const offsetX = Math.sin(angle) * p.amp * 0.7;
+                    const offsetY = Math.cos(angle * 0.7) * p.amp * 0.5;
+                    const x = p.origX + offsetX;
+                    const y = p.origY + offsetY;
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+                // Замыкаем контур
+                const first = points[0];
+                const last = points[points.length-1];
+                ctx.lineTo(first.origX + Math.sin(wavePhase) * first.amp, first.origY + Math.cos(wavePhase*0.7) * first.amp);
+                ctx.stroke();
+            }
+            canvasAnimId = requestAnimationFrame(drawWaves);
+        }
+        
+        drawWaves();
     }
-
-    // --- Чат (модальное окно) ---
+    
+    function stopWaves() {
+        if (canvasAnimId) cancelAnimationFrame(canvasAnimId);
+        if (wavesCanvas) {
+            const ctx = wavesCanvas.getContext('2d');
+            ctx.clearRect(0, 0, wavesCanvas.width, wavesCanvas.height);
+        }
+    }
+    
+    // При изменении размера контейнера пересоздаём волны
+    function resizeCanvas() {
+        if (!wavesCanvas) return;
+        const rect = wavesCanvas.parentElement.getBoundingClientRect();
+        wavesCanvas.width = rect.width;
+        wavesCanvas.height = rect.height;
+        initWaves();
+    }
+    
+    // -------- Чат ----------
     function toggleChatModal() {
         if (chatModal.classList.contains('hidden')) {
             chatModal.classList.remove('hidden');
@@ -373,15 +411,15 @@
         chatModalInput.value = '';
     }
 
-    // --- DataConnection с упрощённой логикой ---
-    function setupDataConnection(conn) {
+    // Установка DataConnection (только для инициатора или для принимающей стороны)
+    function setupDataConnection(conn, isInitiator = false) {
         if (dataConnection === conn) return;
         if (dataConnection) {
             dataConnection.close();
         }
         dataConnection = conn;
         dataConnection.on('open', () => {
-            log('✅ Чат соединение открыто', 'success');
+            log('Чат соединение открыто', 'success');
             addChatMessageToModal('📡 Чат готов', false);
         });
         dataConnection.on('data', (d) => {
@@ -397,11 +435,24 @@
         
         if (dataConnection.open) {
             addChatMessageToModal('📡 Чат готов', false);
+        } else if (isInitiator) {
+            // Повторные попытки открыть соединение (если не открылось)
+            let attempts = 0;
+            const interval = setInterval(() => {
+                if (dataConnection && dataConnection.open) {
+                    clearInterval(interval);
+                    addChatMessageToModal('📡 Чат готов', false);
+                } else if (attempts >= 15) {
+                    clearInterval(interval);
+                    log('Не удалось открыть чат', 'error');
+                    addChatMessageToModal('❌ Чат не подключился', false);
+                }
+                attempts++;
+            }, 1000);
         }
     }
 
-    // --- Визуализация звука (для волн, если нужно) - опционально, не обязательно ---
-    // --- Звук звонка ---
+    // -------- Звук звонка ----------
     function playRingtone() {
         stopRingtone();
         try {
@@ -424,7 +475,7 @@
     }
     function stopRingtone() { if (ringInterval) clearInterval(ringInterval); if (window._ringCtx) window._ringCtx.close().catch(()=>{}); window._ringCtx = null; }
 
-    // --- Демонстрация экрана ---
+    // -------- Демонстрация экрана ----------
     function isScreenShareSupported() { return !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia); }
     function updateScreenButtonVisibility() {
         if (!controlsDiv.classList.contains('hidden') && hasVideo && !screenSharingActive && isScreenShareSupported()) screenBtn.classList.remove('hidden');
@@ -452,6 +503,8 @@
             localStream.addTrack(screenTrack);
             localVideo.srcObject = localStream;
             localVideo.classList.remove('hidden');
+            wavesCanvas.style.display = 'none';
+            audioOnlyPlaceholder.classList.add('hidden');
             screenSharingActive = true;
             screenBtn.classList.add('bg-emerald-600');
             log('Демонстрация экрана активна', 'success');
@@ -476,19 +529,21 @@
             }
             screenSharingActive = false;
             screenBtn.classList.remove('bg-emerald-600');
+            if (!hasVideo || isCamMuted) { wavesCanvas.style.display = 'block'; localVideo.classList.add('hidden'); }
+            else { wavesCanvas.style.display = 'none'; localVideo.classList.remove('hidden'); }
             updateScreenButtonVisibility();
             log('Экран выключен', 'success');
         } catch(e) { log('Ошибка остановки экрана: ' + e.message, 'error'); }
     }
 
-    // --- Медиа ---
+    // -------- Медиа ----------
     async function requestCamera() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             if (localStream) localStream.getTracks().forEach(t => t.stop());
             localStream = stream; hasVideo = true;
             localVideo.srcObject = stream; localVideo.classList.remove('hidden');
-            audioOnlyPlaceholder.classList.add('hidden');
+            wavesCanvas.style.display = 'none'; audioOnlyPlaceholder.classList.add('hidden');
             document.getElementById('camBtn').classList.remove('hidden');
             originalVideoTrack = stream.getVideoTracks()[0];
             updateScreenButtonVisibility();
@@ -502,7 +557,7 @@
             const stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
             if (localStream) localStream.getTracks().forEach(t => t.stop());
             localStream = stream; hasVideo = false;
-            localVideo.classList.add('hidden');
+            localVideo.classList.add('hidden'); wavesCanvas.style.display = 'block';
             audioOnlyPlaceholder.classList.add('hidden');
             document.getElementById('camBtn').classList.add('hidden');
             updateScreenButtonVisibility();
@@ -512,24 +567,17 @@
         } catch(e) { log('Нет доступа к микрофону', 'error'); return false; }
     }
 
-    // --- PeerJS ---
+    // -------- PeerJS ----------
     function initPeer() {
         peer = new Peer({ config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] } });
         peer.on('open', id => { myIdInput.value = id; statusDiv.innerText = '✅ ID готов'; log(`Ваш ID: ${id}`, 'success'); });
-        peer.on('call', call => { 
-            playRingtone(); 
-            if (confirm('Входящий звонок. Принять?')) { 
-                stopRingtone(); 
-                answerCall(call); 
-            } else { stopRingtone(); call.close(); } 
-        });
+        peer.on('call', call => { playRingtone(); if (confirm('Входящий звонок. Принять?')) { stopRingtone(); answerCall(call); } else { stopRingtone(); call.close(); } });
         peer.on('connection', conn => {
             log(`Входящее DataConnection от ${conn.peer}`, 'info');
             if (!dataConnection) {
-                setupDataConnection(conn);
+                setupDataConnection(conn, false); // принимаем соединение от звонящего
             } else {
-                // Заменяем, если есть проблемы
-                setupDataConnection(conn);
+                log('DataConnection уже есть, игнорируем новое', 'info');
             }
         });
         peer.on('error', err => log(`Peer ошибка: ${err.type}`, 'error'));
@@ -540,16 +588,14 @@
         if (!rid) return alert('Введите ID собеседника');
         if (!localStream) return alert('Разрешите доступ к микрофону/камере');
         videoContainer.style.display = 'block'; controlsDiv.classList.remove('hidden'); callingOverlay.classList.remove('hidden');
-        // Запускаем волны
-        startWavesAnimation();
-        
         currentCall = peer.call(rid, localStream);
         handleCall(currentCall);
         
-        // Создаём DataConnection для чата
+        // Инициатор создаёт DataConnection
         if (!dataConnection) {
             const conn = peer.connect(rid, { label: 'chat', reliable: true });
-            setupDataConnection(conn);
+            setupDataConnection(conn, true);
+            log('Создаём чат-соединение (инициатор)', 'info');
         }
         updateScreenButtonVisibility();
         log('Исходящий звонок', 'info');
@@ -560,29 +606,21 @@
         else call.answer(localStream);
         videoContainer.style.display = 'block'; controlsDiv.classList.remove('hidden');
         currentCall = call; handleCall(call);
-        startWavesAnimation();
-        
-        // Создаём DataConnection для чата (на случай, если звонящий не создал)
-        if (!dataConnection) {
-            const conn = peer.connect(call.peer, { label: 'chat', reliable: true });
-            setupDataConnection(conn);
-        }
+        // Принимающая сторона НЕ создаёт DataConnection, ждёт от звонящего (peer.on('connection'))
         updateScreenButtonVisibility();
         log('Входящий звонок принят', 'info');
     }
 
     function handleCall(call) {
-        call.on('stream', remoteStreamFromCall => {
-            remoteStream = remoteStreamFromCall;
+        call.on('stream', remoteStream => {
             remoteVideo.srcObject = remoteStream;
             callingOverlay.classList.add('hidden');
             statusDiv.innerText = '🟢 В эфире';
-            // Если нет видео, показываем волны (они уже включены)
+            // Если у собеседника нет видео, показываем волны
             if (remoteStream.getVideoTracks().length === 0 || remoteStream.getVideoTracks()[0].readyState === 'ended') {
-                // волны уже есть
+                wavesCanvas.style.display = 'block';
             } else {
-                // Если есть видео, волны всё равно показываем поверх? Нет, лучше скрыть canvas? Оставим пока всегда
-                // Но чтобы не мешать видео, можно сделать полупрозрачным? Пока оставим как есть.
+                wavesCanvas.style.display = 'none';
             }
         });
         call.on('close', () => endCallUI());
@@ -591,20 +629,16 @@
 
     function endCall() { if (currentCall) currentCall.close(); if (dataConnection) dataConnection.close(); endCallUI(); }
     function endCallUI() {
-        remoteVideo.srcObject = null;
-        videoContainer.style.display = 'none';
-        controlsDiv.classList.add('hidden');
+        remoteVideo.srcObject = null; videoContainer.style.display = 'none'; controlsDiv.classList.add('hidden');
         callingOverlay.classList.add('hidden');
         chatModal.classList.add('hidden');
         chatModalMessages.innerHTML = '<div class="text-center text-xs text-slate-500 p-3">Нет сообщений</div>';
         statusDiv.innerText = 'Звонок завершён';
-        stopRingtone();
-        currentCall = null;
+        if (!hasVideo) wavesCanvas.style.display = 'block'; else wavesCanvas.style.display = 'none';
+        stopRingtone(); currentCall = null; 
         if (dataConnection) { dataConnection.close(); dataConnection = null; }
         screenSharingActive = false;
-        screenBtn.classList.remove('bg-emerald-600');
-        updateScreenButtonVisibility();
-        stopWavesAnimation();
+        screenBtn.classList.remove('bg-emerald-600'); updateScreenButtonVisibility();
     }
 
     function toggleMic() {
@@ -622,17 +656,20 @@
         const btn = document.getElementById('camBtn');
         btn.textContent = isCamMuted ? '📷❌' : '📷';
         btn.classList.toggle('bg-red-600', isCamMuted);
-        if (isCamMuted) {
-            localVideo.classList.add('hidden');
-        } else {
-            localVideo.classList.remove('hidden');
-        }
+        if (isCamMuted) { wavesCanvas.style.display = 'block'; localVideo.classList.add('hidden'); }
+        else { wavesCanvas.style.display = 'none'; localVideo.classList.remove('hidden'); }
         updateScreenButtonVisibility();
     }
     function copyId() { navigator.clipboard.writeText(myIdInput.value); log('ID скопирован', 'success'); }
 
-    window.addEventListener('load', () => { initPeer(); requestCamera(); });
-    window.addEventListener('beforeunload', () => { if (localStream) localStream.getTracks().forEach(t => t.stop()); if (peer) peer.destroy(); stopRingtone(); });
+    window.addEventListener('load', () => { 
+        initPeer(); 
+        requestCamera().then(() => {
+            initWaves();
+            window.addEventListener('resize', () => { resizeCanvas(); });
+        });
+    });
+    window.addEventListener('beforeunload', () => { if (localStream) localStream.getTracks().forEach(t => t.stop()); if (peer) peer.destroy(); stopWaves(); stopRingtone(); });
 </script>
 </body>
 </html>
