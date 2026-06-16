@@ -1,4 +1,19 @@
-<!DOCTYPE html>
+
+                        <!DOCTYPE html>
+                        <html lang="en">
+                        <head>
+                            <meta charset="UTF-8">
+                            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <style>
+                body {
+                  background-color: white; /* Ensure the iframe has a white background */
+                }
+
+                
+              </style>
+                        </head>
+                        <body>
+                            <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
@@ -188,14 +203,6 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.3; }
         }
-        .btn-reconnect-chat {
-            background: #3b82f6;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 0.7rem;
-            cursor: pointer;
-            margin-left: 10px;
-        }
     </style>
 </head>
 <body>
@@ -301,11 +308,12 @@
     let peer = null, localStream = null, currentCall = null, dataConnection = null;
     let isMicMuted = false, isCamMuted = false, hasVideo = false, screenSharingActive = false;
     let originalVideoTrack = null, ringInterval = null;
-    let canvasAnimId = null;
+    let waveAnimationFrame = null;
     let remotePeerId = null;
     let chatRetryAttempts = 0;
     let chatRetryTimer = null;
     let isConnectingChat = false;
+    let isCallInitiator = false; // КЛЮЧЕВОЙ ФЛАГ: кто звонит — тот и создаёт чат
 
     // ============================================
     // DOM ЭЛЕМЕНТЫ
@@ -379,16 +387,14 @@
     }
 
     // ============================================
-    // ВОЛНЫ (ИСПРАВЛЕННЫЕ ДЛЯ МОБИЛЬНЫХ)
+    // ВОЛНЫ
     // ============================================
     let wavePoints = [];
     let wavePhase = 0;
     let waveSpeed = 0.006;
-    let waveAnimationFrame = null;
     
     function initWaves() {
         if (!wavesCanvas) return;
-        // Принудительно устанавливаем размер canvas в пикселях, чтобы избежать полос
         const rect = wavesCanvas.parentElement.getBoundingClientRect();
         wavesCanvas.width = rect.width;
         wavesCanvas.height = rect.height;
@@ -422,12 +428,10 @@
                 if (waveAnimationFrame) cancelAnimationFrame(waveAnimationFrame);
                 return;
             }
-            // Проверяем, не изменился ли размер контейнера
             const newRect = wavesCanvas.parentElement.getBoundingClientRect();
             if (Math.abs(wavesCanvas.width - newRect.width) > 1 || Math.abs(wavesCanvas.height - newRect.height) > 1) {
                 wavesCanvas.width = newRect.width;
                 wavesCanvas.height = newRect.height;
-                // Пересоздаём точки
                 initWaves();
                 return;
             }
@@ -451,7 +455,6 @@
                     else ctx.lineTo(x, y);
                 }
                 ctx.stroke();
-                // замыкаем контур
                 const first = points[0];
                 ctx.lineTo(first.origX + Math.sin(wavePhase * 0.6) * first.amp * 0.5, 
                            first.origY + Math.cos(wavePhase * 0.5) * first.amp * 0.4);
@@ -481,7 +484,7 @@
     }
 
     // ============================================
-    // ЧАТ (УЛУЧШЕННЫЙ ДЛЯ МОБИЛЬНЫХ)
+    // ЧАТ (ИСПРАВЛЕННЫЙ — только инициатор создаёт соединение)
     // ============================================
     function updateChatStatusIndicator() {
         if (chatStatusIndicator) {
@@ -502,8 +505,8 @@
             updateChatStatusIndicator();
             if (!dataConnection || dataConnection.open === false) {
                 addChatMessageToModal('⚠️ Чат не подключён. Нажмите "Переподключить".', false);
-                // Автоматическая попытка переподключения при открытии окна
-                if (remotePeerId && currentCall) {
+                // Только инициатор может пересоздать соединение
+                if (remotePeerId && currentCall && isCallInitiator) {
                     reconnectChat();
                 }
             } else {
@@ -531,9 +534,8 @@
         if (!txt) return;
         
         if (!dataConnection || dataConnection.open === false) {
-            log('Чат не подключён. Попытка переподключения...', 'error');
-            addChatMessageToModal('⚠️ Нет соединения, переподключаем...', true);
-            reconnectChat();
+            log('Чат не подключён.', 'error');
+            addChatMessageToModal('⚠️ Нет соединения', true);
             return;
         }
         
@@ -545,7 +547,6 @@
         } catch (err) {
             log('Ошибка отправки: ' + err.message, 'error');
             addChatMessageToModal('❌ Ошибка отправки', true);
-            reconnectChat();
         }
     }
 
@@ -560,7 +561,7 @@
         
         dataConnection.on('open', () => {
             log('✅ Чат соединение открыто', 'success');
-            addChatMessageToModal('📡 Чат подключён', false);
+            addChatMessageToModal(' Чат подключён', false);
             isConnectingChat = false;
             if (chatRetryTimer) {
                 clearTimeout(chatRetryTimer);
@@ -582,7 +583,8 @@
             if (dataConnection === conn) dataConnection = null;
             addChatMessageToModal('⚠️ Чат отключён', false);
             updateChatStatusIndicator();
-            if (remotePeerId && currentCall) {
+            // Только инициатор пытается переподключиться
+            if (remotePeerId && currentCall && isCallInitiator) {
                 scheduleChatReconnect();
             }
         });
@@ -591,7 +593,10 @@
             log('Ошибка чата: ' + err, 'error');
             addChatMessageToModal('❌ Ошибка соединения', false);
             updateChatStatusIndicator();
-            scheduleChatReconnect();
+            // Только инициатор пытается переподключиться
+            if (isCallInitiator) {
+                scheduleChatReconnect();
+            }
         });
         
         if (conn.open) {
@@ -612,7 +617,7 @@
         const delay = Math.min(5000, 500 * Math.pow(1.5, chatRetryAttempts));
         chatRetryAttempts++;
         
-        log(`Повторная попытка подключения чата через ${delay/1000}с (попытка ${chatRetryAttempts})`, 'info');
+        log(`Повторная попытка чата через ${delay/1000}с (попытка ${chatRetryAttempts})`, 'info');
         chatRetryTimer = setTimeout(() => {
             if (remotePeerId && currentCall && (!dataConnection || !dataConnection.open)) {
                 createChatConnection();
@@ -625,7 +630,7 @@
         if (!remotePeerId) return;
         if (isConnectingChat) return;
         isConnectingChat = true;
-        log('Создание нового чат-соединения...', 'info');
+        log('Создание чат-соединения...', 'info');
         try {
             const conn = peer.connect(remotePeerId, { 
                 label: 'chat', 
@@ -643,6 +648,11 @@
     function reconnectChat() {
         if (!remotePeerId) {
             addChatMessageToModal('❌ Нет активного собеседника', true);
+            return;
+        }
+        // Только инициатор может пересоздать соединение
+        if (!isCallInitiator) {
+            addChatMessageToModal('⚠️ Переподключить может только звонящий', true);
             return;
         }
         if (dataConnection) {
@@ -702,7 +712,7 @@
     async function toggleScreenShare() {
         if (!currentCall) { log('Нет активного звонка', 'error'); return; }
         if (!localStream) { log('Нет медиапотока', 'error'); return; }
-        if (!hasVideo) { log('Включите камеру для демонстрации экрана', 'error'); return; }
+        if (!hasVideo) { log('Включите камеру', 'error'); return; }
         if (!isScreenShareSupported()) { log('Браузер не поддерживает демонстрацию экрана', 'error'); return; }
         
         if (screenSharingActive) await stopScreenShare();
@@ -840,7 +850,6 @@
             updateScreenButtonVisibility();
             log('Микрофон готов (аудиорежим)', 'success');
             statusDiv.innerText = '🎙 Аудиорежим';
-            // Запускаем волны для аудиорежима
             initWaves();
             return true;
         } catch(e) { 
@@ -895,15 +904,17 @@
         });
 
         peer.on('connection', conn => {
-            log(`💬 Входящее соединение чата от ${conn.peer}`, 'info');
+            log(` Входящее соединение чата от ${conn.peer}`, 'info');
             
+            // Принимаем только если это наш собеседник по звонку
             if (remotePeerId === conn.peer && currentCall) {
+                // Принимаем входящее соединение (мы не инициатор)
                 setupDataConnection(conn, false);
-            } else if (!dataConnection && currentCall) {
-                // Если нет активного чата, но есть звонок, принимаем
+                log('Принято входящее чат-соединение', 'success');
+            } else if (!dataConnection && currentCall && conn.peer === remotePeerId) {
                 setupDataConnection(conn, false);
             } else {
-                log('Чат отклонён (нет активного звонка)', 'info');
+                log('Чат отклонён (нет активного звонка с этим peer)', 'info');
                 conn.close();
             }
         });
@@ -954,7 +965,7 @@
     }
 
     // ============================================
-    // ЗВОНКИ
+    // ЗВОНКИ (ИСПРАВЛЕНО — только звонящий создаёт чат)
     // ============================================
     function startCall() {
         const rid = remoteIdInput.value.trim();
@@ -963,6 +974,7 @@
         if (!peer || peer.destroyed) return alert('Сервер не подключён. Обновите страницу.');
         
         remotePeerId = rid;
+        isCallInitiator = true; // МЫ ЗВОНИМ — мы инициатор чата
         videoContainer.style.display = 'block'; 
         controlsDiv.classList.remove('hidden'); 
         callingOverlay.classList.remove('hidden');
@@ -970,15 +982,17 @@
         currentCall = peer.call(rid, localStream);
         handleCall(currentCall);
         
-        log('Создаём чат-соединение...', 'info');
+        // Только инициатор создаёт чат-соединение
+        log('📞 Исходящий звонок. Создаём чат-соединение...', 'info');
         createChatConnection();
         
         updateScreenButtonVisibility();
-        log(`📞 Исходящий звонок на ${rid}`, 'info');
+        log(` Исходящий звонок на ${rid}`, 'info');
     }
 
     function answerCall(call) {
         remotePeerId = call.peer;
+        isCallInitiator = false; // МЫ ОТВЕЧАЕМ — НЕ создаём чат, только принимаем
         
         if (!localStream) {
             requestAudioOnly().then(() => {
@@ -989,11 +1003,9 @@
                     currentCall = call; 
                     handleCall(call);
                     
-                    log('Создаём чат-соединение...', 'info');
-                    createChatConnection();
-                    
+                    // НЕ создаём чат — ждём входящее соединение от звонящего
+                    log('✅ Входящий звонок принят (аудио). Ждём чат-соединение...', 'success');
                     updateScreenButtonVisibility();
-                    log('✅ Входящий звонок принят (аудио)', 'success');
                 }
             });
         } else {
@@ -1003,11 +1015,9 @@
             currentCall = call; 
             handleCall(call);
             
-            log('Создаём чат-соединение...', 'info');
-            createChatConnection();
-            
+            // НЕ создаём чат — ждём входящее соединение от звонящего
+            log('✅ Входящий звонок принят. Ждём чат-соединение...', 'success');
             updateScreenButtonVisibility();
-            log('✅ Входящий звонок принят', 'success');
         }
     }
 
@@ -1029,7 +1039,7 @@
         });
         
         call.on('close', () => {
-            log('📴 Звонок завершён', 'info');
+            log(' Звонок завершён', 'info');
             endCallUI();
         });
         
@@ -1069,6 +1079,7 @@
         
         stopRingtone(); 
         currentCall = null; 
+        isCallInitiator = false;
         
         if (dataConnection) { 
             try { dataConnection.close(); } catch(e) {}
@@ -1107,7 +1118,7 @@
         isCamMuted = !isCamMuted;
         localStream.getVideoTracks().forEach(t => t.enabled = !isCamMuted);
         const btn = document.getElementById('camBtn');
-        btn.textContent = isCamMuted ? '📷❌' : '📷';
+        btn.textContent = isCamMuted ? '❌' : '📷';
         btn.classList.toggle('bg-red-600', isCamMuted);
         
         if (isCamMuted) { 
@@ -1165,3 +1176,32 @@
 </script>
 </body>
 </html>
+
+
+
+              <script>
+                              let isCallInitiator = false; // кто звонит — тот и создаёт чат
+
+isCallInitiator = true; // МЫ ЗВОНИМ
+createChatConnection(); // создаём чат
+
+isCallInitiator = false; // МЫ ОТВЕЧАЕМ
+// НЕ вызываем createChatConnection()!
+// Только ждём входящее соединение
+
+if (remotePeerId === conn.peer && currentCall) {
+    setupDataConnection(conn, false); // принимаем
+}
+
+if (!isCallInitiator) {
+    addChatMessageToModal('️ Переподключить может только звонящий', true);
+    return;
+}
+
+isCallInitiator = false;
+
+
+              </script>
+                        </body>
+                        </html>
+                    
