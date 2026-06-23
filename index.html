@@ -2,1141 +2,427 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Wave — видеозвонки</title>
-    <!-- Используем Tailwind для быстрой верстки -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Видеозвонки - Без ограничений</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- PeerJS -->
     <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
-    
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
-
-        * { user-select: none; box-sizing: border-box; }
-        
         body {
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
-            background: linear-gradient(135deg, #0b1120 0%, #030712 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 1rem;
+            font-family: system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            color: #f8fafc;
         }
-
-        /* Стиль логотипа как на скрине */
-        .brand-title {
-            font-size: 3.2rem;
-            font-weight: 800;
-            letter-spacing: -0.5px;
-            color: white;
-            text-shadow: 0 0 20px rgba(255,255,255,0.05);
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
-        .brand-wave {
-            width: 140px;
-            height: 3px;
-            background: linear-gradient(90deg, #4facfe, #34d399);
-            border-radius: 10px;
-            margin: -4px auto 0;
-            opacity: 0.7;
-        }
-
-        /* Поля ID */
-        .id-card {
-            background: rgba(20, 25, 35, 0.6);
-            backdrop-filter: blur(4px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 14px;
-            padding: 12px 16px;
-            transition: border-color 0.2s;
-        }
-        .id-card label {
-            font-size: 0.7rem;
-            color: #94a3b8;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .id-card .value {
-            font-family: monospace;
-            font-size: 0.85rem;
-            color: #e2e8f0;
-            word-break: break-all;
-        }
-
-        /* Большие кнопки */
-        .btn-video {
-            background: linear-gradient(135deg, #4facfe, #00f2fe);
-            color: white;
-            border: none;
-            border-radius: 14px;
-            padding: 14px 24px;
-            font-weight: 600;
-            transition: all 0.2s;
-            box-shadow: 0 8px 20px rgba(79, 172, 254, 0.2);
-        }
-        .btn-video:hover { transform: scale(1.02); box-shadow: 0 8px 25px rgba(79, 172, 254, 0.4); }
-
-        .btn-audio {
-            background: linear-gradient(135deg, #a78bfa, #fbc2eb);
-            color: white;
-            border: none;
-            border-radius: 14px;
-            padding: 14px 24px;
-            font-weight: 600;
-            transition: all 0.2s;
-            box-shadow: 0 8px 20px rgba(167, 139, 250, 0.2);
-        }
-        .btn-audio:hover { transform: scale(1.02); box-shadow: 0 8px 25px rgba(167, 139, 250, 0.4); }
-
-        /* Блок статуса (как на скрине) */
-        .status-card {
-            background: rgba(15, 23, 42, 0.7);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 20px;
-            padding: 16px;
-            margin-top: 20px;
-        }
-        .status-header {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            color: #cbd5e1;
-            margin-bottom: 8px;
-        }
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            background: #10b981;
-            border-radius: 50%;
-            display: inline-block;
-            box-shadow: 0 0 8px #10b981;
-        }
-        .status-message-box {
-            background: rgba(0, 0, 0, 0.25);
-            border-radius: 12px;
-            padding: 12px;
-            border-left: 3px solid #4facfe;
-        }
-        .small-reconnect-btn {
-            background: #4facfe;
-            color: white;
-            padding: 4px 14px;
-            border-radius: 30px;
-            font-size: 0.7rem;
-            font-weight: 600;
-            cursor: pointer;
-            border: none;
-            transition: 0.2s;
-            display: inline-block;
-        }
-        .small-reconnect-btn:hover { background: #3b82f6; }
-
-        /* Контейнер видео */
         .video-container {
             position: relative;
             width: 100%;
             aspect-ratio: 16/9;
-            background: #0a0f1c;
-            border-radius: 1.5rem;
+            background: #000;
+            border-radius: 1rem;
             overflow: hidden;
-            box-shadow: 0 20px 35px -10px rgba(0,0,0,0.5);
-            margin-top: 10px;
         }
         .remote-video { width: 100%; height: 100%; object-fit: cover; }
         .local-video {
             position: absolute; bottom: 1rem; right: 1rem;
             width: 120px; height: 120px; object-fit: cover;
-            border-radius: 1rem; border: 2px solid rgba(255,255,255,0.2);
-            background: #1e293b; z-index: 20;
+            border-radius: 0.75rem; border: 2px solid rgba(255, 255, 255, 0.2);
+            background: #334155; z-index: 10;
         }
-        @media (max-width: 640px) { .local-video { width: 70px; height: 70px; } }
-
-        .waves-canvas {
-            position: absolute;
-            inset: 0;
+        @media (max-width: 640px) {
+            .local-video { width: 80px; height: 80px; }
+        }
+        .control-btn { transition: all 0.2s ease; }
+        .control-btn:hover { transform: scale(1.05); }
+        .pulse-ring { animation: pulse-ring 2s infinite; }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+        .audio-only-placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
             width: 100%;
             height: 100%;
-            z-index: 5;
-            pointer-events: none;
-            border-radius: inherit;
-        }
-
-        .control-btn {
-            width: 52px; height: 52px; border-radius: 50%;
-            background: #1e293b; display: flex; align-items: center; justify-content: center;
-            font-size: 1.4rem; cursor: pointer; border: none; transition: 0.2s;
-            color: white; border: 1px solid rgba(255,255,255,0.1);
-        }
-        .control-btn:hover { transform: scale(1.05); background: #334155; }
-        
-        /* Чат модалка (из старого кода, но стилизована) */
-        .chat-modal {
-            position: fixed; bottom: 90px; right: 20px; width: 340px; height: 460px;
-            background: rgba(15, 23, 42, 0.97); backdrop-filter: blur(18px);
-            border-radius: 1.5rem; border: 1px solid rgba(255,255,255,0.15);
-            display: flex; flex-direction: column; z-index: 100;
-            box-shadow: 0 25px 40px -12px black; resize: both; overflow: auto;
-        }
-        .chat-modal-header {
-            padding: 0.75rem 1rem; border-bottom: 1px solid rgba(255,255,255,0.1);
-            font-weight: 600; display: flex; justify-content: space-between;
-            align-items: center; cursor: grab; background: rgba(0,0,0,0.2);
-            border-radius: 1.5rem 1.5rem 0 0;
-        }
-        .chat-modal-messages {
-            flex: 1; overflow-y: auto; padding: 0.75rem;
-            display: flex; flex-direction: column; gap: 0.5rem;
-        }
-        .chat-modal-input {
-            display: flex; gap: 0.5rem; padding: 0.75rem;
-            border-top: 1px solid rgba(255,255,255,0.1);
-        }
-        .chat-modal-input input {
-            flex: 1; background: #0f172a; border: 1px solid #334155;
-            border-radius: 2rem; padding: 0.5rem 1rem; color: white; outline: none;
-        }
-        .chat-modal-input button {
-            background: #3b82f6; border-radius: 2rem; padding: 0.5rem 1rem;
-            font-weight: 600; cursor: pointer; color: white; border: none;
-        }
-        .chat-message {
-            max-width: 85%; padding: 0.5rem 1rem; border-radius: 1.25rem;
-            font-size: 0.85rem; word-break: break-word;
-        }
-        .chat-message.own { align-self: flex-end; background: #3b82f6; color: white; border-bottom-right-radius: 0.25rem; }
-        .chat-message.other { align-self: flex-start; background: #334155; color: #f1f5f9; border-bottom-left-radius: 0.25rem; }
-        .hidden { display: none !important; }
-        .reconnect-chat-btn {
-            background: #3b82f6; padding: 2px 12px; border-radius: 20px; font-size: 0.7rem; cursor: pointer; border: none; color: white;
+            background: linear-gradient(135deg, #1e293b, #334155);
+            font-size: 4rem;
         }
         .debug-log {
-            max-height: 100px; overflow-y: auto; font-family: monospace; font-size: 0.7rem;
-            background: rgba(0,0,0,0.4); border-radius: 10px; padding: 0.5rem; margin-top: 10px; color: #94a3b8;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            font-family: monospace;
+            font-size: 0.75rem;
+            max-height: 200px;
+            overflow-y: auto;
         }
+        .debug-log p {
+            margin: 0.25rem 0;
+            color: #94a3b8;
+        }
+        .debug-log .error { color: #ef4444; }
+        .debug-log .success { color: #10b981; }
+        .debug-log .info { color: #3b82f6; }
     </style>
 </head>
-<body>
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
 
-<div class="w-full max-w-3xl lg:max-w-4xl space-y-5 p-2">
-
-    <!-- ЛОГОТИП КАК НА СКРИНЕ -->
-    <div class="text-center">
-        <div class="brand-title">
-            <span style="color: #4facfe;">W</span>ave
+    <div class="w-full max-w-4xl space-y-6">
+        <div class="text-center space-y-2">
+            <h1 class="text-3xl md:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">
+                Видеозвонки
+            </h1>
+            <p class="text-slate-400 text-sm">Без регистрации и ограничений по времени</p>
         </div>
-        <div class="brand-wave"></div>
-        <div class="text-[0.7rem] text-slate-500 mt-1 uppercase tracking-widest">чистый звук</div>
-    </div>
 
-    <!-- ID ПАНЕЛЬ -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div class="id-card">
-            <label>Ваш ID</label>
-            <div class="flex justify-between items-center mt-1">
-                <span class="value" id="myId">Подключение...</span>
-                <button onclick="copyId()" class="text-slate-400 hover:text-white transition p-1"><i class="fas fa-copy"></i></button>
+        <div class="glass-panel rounded-2xl p-6 space-y-4">
+            <div class="flex flex-col md:flex-row gap-4">
+                <div class="flex-1">
+                    <label class="block text-xs font-medium text-slate-400 mb-1 uppercase">Ваш ID</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="myId" readonly 
+                            class="flex-1 bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 font-mono text-sm"
+                            value="Загрузка...">
+                        <button onclick="copyId()" class="p-2.5 bg-slate-700 hover:bg-slate-600 rounded-lg">📋</button>
+                    </div>
+                </div>
+                
+                <div class="flex-1">
+                    <label class="block text-xs font-medium text-slate-400 mb-1 uppercase">ID собеседника</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="remoteId" placeholder="Вставьте ID друга" 
+                            class="flex-1 bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 placeholder-slate-500">
+                        <button onclick="startCall()" 
+                            class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg">
+                            📞 Позвонить
+                        </button>
+                    </div>
+                </div>
             </div>
-        </div>
-        <div class="id-card">
-            <label>ID собеседника</label>
-            <div class="flex justify-between items-center mt-1">
-                <input type="text" id="remoteId" placeholder="Вставьте ID" class="bg-transparent w-full text-slate-200 outline-none font-mono text-sm">
-                <button onclick="startCall()" class="bg-emerald-500 hover:bg-emerald-400 text-white rounded-full p-2 w-8 h-8 flex items-center justify-center transition" title="Позвонить">📞</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- БОЛЬШИЕ КНОПКИ -->
-    <div class="flex flex-wrap gap-3">
-        <button onclick="requestCamera()" class="flex-1 min-w-[140px] btn-video">
-            <i class="fas fa-video mr-2"></i> Видео + Микрофон
-        </button>
-        <button onclick="requestAudioOnly()" class="flex-1 min-w-[140px] btn-audio">
-            <i class="fas fa-microphone mr-2"></i> Только микрофон
-        </button>
-    </div>
-
-    <!-- СТАТУС-БЛОК (ТОЧНО КАК НА СКРИНЕ) -->
-    <div class="status-card">
-        <div class="status-header">
-            <span class="status-dot"></span> В эфире
-            <span id="serverStatus" class="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 ml-2" title="Статус сервера">...</span>
-        </div>
-        <div class="status-message-box">
-            <div id="statusMessage" class="text-slate-200 text-sm font-medium">Вы не подключены. Нажмите "Переподключить".</div>
-            <div class="mt-2">
-                <button id="reconnectButton" onclick="manualReconnect()" class="small-reconnect-btn">
-                    <i class="fas fa-sync-alt mr-1"></i> Переподключение...
+            
+            <div class="flex flex-col sm:flex-row gap-2">
+                <button onclick="requestCamera()" class="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg transition">
+                    📷 Видео + Микрофон
+                </button>
+                <button onclick="requestAudioOnly()" class="flex-1 py-3 bg-purple-600 hover:bg-purple-500 text-white font-medium rounded-lg transition">
+                    🎤 Только микрофон (без камеры)
                 </button>
             </div>
-        </div>
-        <div class="debug-log hidden" id="debugLog"></div>
-    </div>
 
-    <!-- ВИДЕО КОНТЕЙНЕР (изначально скрыт) -->
-    <div class="video-container hidden" id="videoContainer">
-        <video id="remoteVideo" class="remote-video" autoplay playsinline></video>
-        <video id="localVideo" class="local-video hidden" autoplay playsinline muted></video>
-        <canvas id="wavesCanvas" class="waves-canvas" width="800" height="450"></canvas>
-        <div id="audioOnlyPlaceholder" class="absolute inset-0 flex items-center justify-center hidden z-10 pointer-events-none">
-            <div class="text-6xl opacity-70">🎤</div>
-        </div>
-        <div id="callingOverlay" class="absolute inset-0 flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm z-30 hidden">
-            <div class="w-16 h-16 rounded-full bg-emerald-500/30 flex items-center justify-center animate-pulse">
-                <svg class="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+            <div id="statusMessage" class="text-center text-sm text-slate-400">Инициализация...</div>
+            
+            <!-- Лог для диагностики -->
+            <div class="debug-log hidden" id="debugLog">
+                <p class="info">📋 Лог подключений:</p>
             </div>
-            <p class="text-white text-lg mt-3">Вызов...</p>
         </div>
-        
-        <!-- Контролы звонка -->
-        <div class="absolute bottom-6 left-0 right-0 flex justify-center gap-4 hidden z-40" id="controls">
-            <button id="micBtn" onclick="toggleMic()" class="control-btn">🎤</button>
-            <button id="camBtn" onclick="toggleCamera()" class="control-btn hidden">📷</button>
-            <button id="screenBtn" onclick="toggleScreenShare()" class="control-btn hidden" title="Показать экран">🖥️</button>
-            <button id="chatBtn" onclick="toggleChatModal()" class="control-btn" title="Чат">💬</button>
-            <button id="hangupBtn" onclick="endCall()" class="control-btn bg-red-600 hover:bg-red-500" style="background:#dc2626;">📞</button>
+
+        <div class="video-container glass-panel hidden" id="videoContainer">
+            <video id="remoteVideo" class="remote-video" autoplay playsinline></video>
+            <video id="localVideo" class="local-video hidden" autoplay playsinline muted></video>
+            
+            <div id="audioOnlyPlaceholder" class="audio-only-placeholder hidden">
+                <div class="text-center">
+                    <div class="text-6xl mb-2">🎤</div>
+                    <div class="text-white text-lg">Аудиозвонок</div>
+                </div>
+            </div>
+            
+            <div id="callingOverlay" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/80 backdrop-blur-sm z-20 hidden">
+                <div class="w-20 h-20 rounded-full bg-emerald-500/20 flex items-center justify-center mb-4 pulse-ring">
+                    <svg class="w-10 h-10 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+                </div>
+                <p class="text-xl font-semibold text-white">Вызов...</p>
+            </div>
+        </div>
+
+        <div class="flex justify-center gap-4 hidden" id="controls">
+            <button onclick="toggleMic()" id="micBtn" class="control-btn w-14 h-14 rounded-full bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-white">🎤</button>
+            <button onclick="toggleCamera()" id="camBtn" class="control-btn w-14 h-14 rounded-full bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-white hidden">📷</button>
+            <button onclick="endCall()" class="control-btn w-14 h-14 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center text-white">📴</button>
         </div>
     </div>
-</div>
 
-<!-- Модальное окно чата (перемещаемое) -->
-<div id="chatModal" class="chat-modal hidden">
-    <div class="chat-modal-header" id="chatModalHeader">
-        <span>💬 Чат <span id="chatStatusIndicator" style="font-size:10px; margin-left:8px;"></span></span>
-        <div style="display: flex; gap: 8px;">
-            <button class="reconnect-chat-btn" onclick="reconnectChat()">🔄 Переподключить</button>
-            <span class="cursor-pointer text-slate-300 hover:text-white" onclick="toggleChatModal()">✕</span>
-        </div>
-    </div>
-    <div id="chatModalMessages" class="chat-modal-messages">
-        <div class="text-center text-xs text-slate-500 p-3">Нет сообщений</div>
-    </div>
-    <div class="chat-modal-input">
-        <input type="text" id="chatModalInput" placeholder="Сообщение..." maxlength="500" onkeypress="if(event.key==='Enter') sendChatMessageModal()">
-        <button onclick="sendChatMessageModal()">→</button>
-    </div>
-</div>
+    <script>
+        let peer = null;
+        let localStream = null;
+        let currentCall = null;
+        let isMicMuted = false;
+        let isCamMuted = false;
+        let hasVideo = false;
 
-<!-- FontAwesome -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+        const myIdInput = document.getElementById('myId');
+        const remoteIdInput = document.getElementById('remoteId');
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const statusMessage = document.getElementById('statusMessage');
+        const videoContainer = document.getElementById('videoContainer');
+        const controls = document.getElementById('controls');
+        const callingOverlay = document.getElementById('callingOverlay');
+        const audioOnlyPlaceholder = document.getElementById('audioOnlyPlaceholder');
+        const camBtn = document.getElementById('camBtn');
+        const debugLog = document.getElementById('debugLog');
 
-<script>
-    // ============================================
-    // ВАША ЛОГИКА ИЗ СТАРОГО КОДА
-    // (адаптирована для нового дизайна)
-    // ============================================
-    
-    // ПЕРЕМЕННЫЕ
-    let peer = null, localStream = null, currentCall = null, dataConnection = null;
-    let isMicMuted = false, isCamMuted = false, hasVideo = false, screenSharingActive = false;
-    let originalVideoTrack = null, ringInterval = null;
-    let waveAnimationFrame = null;
-    let remotePeerId = null;
-    let chatRetryAttempts = 0;
-    let chatRetryTimer = null;
-    let isConnectingChat = false;
-    let isCallInitiator = false; // КЛЮЧЕВОЙ ФЛАГ
+        function log(message, type = 'info') {
+            debugLog.classList.remove('hidden');
+            const p = document.createElement('p');
+            p.className = type;
+            const time = new Date().toLocaleTimeString();
+            p.textContent = `[${time}] ${message}`;
+            debugLog.appendChild(p);
+            debugLog.scrollTop = debugLog.scrollHeight;
+            console.log(`[${type}] ${message}`);
+        }
 
-    // DOM
-    const myIdInput = document.getElementById('myId');
-    const remoteIdInput = document.getElementById('remoteId');
-    const localVideo = document.getElementById('localVideo');
-    const remoteVideo = document.getElementById('remoteVideo');
-    const videoContainer = document.getElementById('videoContainer');
-    const controlsDiv = document.getElementById('controls');
-    const callingOverlay = document.getElementById('callingOverlay');
-    const wavesCanvas = document.getElementById('wavesCanvas');
-    const audioOnlyPlaceholder = document.getElementById('audioOnlyPlaceholder');
-    const statusDiv = document.getElementById('statusMessage');
-    const debugLog = document.getElementById('debugLog');
-    const screenBtn = document.getElementById('screenBtn');
-    const chatModal = document.getElementById('chatModal');
-    const chatModalMessages = document.getElementById('chatModalMessages');
-    const chatModalInput = document.getElementById('chatModalInput');
-    const serverStatus = document.getElementById('serverStatus');
-    const chatStatusIndicator = document.getElementById('chatStatusIndicator');
-    const reconnectBtn = document.getElementById('reconnectButton');
+        function initPeer() {
+            log('Инициализация PeerJS...', 'info');
+            statusMessage.textContent = 'Подключение к серверу...';
+            
+            try {
+                peer = new Peer({
+                    debug: 3,
+                    config: {
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' },
+                            { urls: 'stun:stun.cloudflare.com:3478' }
+                        ]
+                    }
+                });
 
-    // ============================================
-    // ЛОГИКА ПЕРЕПОДКЛЮЧЕНИЯ (НОВАЯ КНОПКА)
-    // ============================================
-    function manualReconnect() {
-        // Если звонок активен, но статус "Не подключены"
-        if (currentCall && remotePeerId) {
-            // Если нет чата, пробуем пересоздать
-            if (!dataConnection || !dataConnection.open) {
-                if (isCallInitiator) {
-                    reconnectChat();
-                } else {
-                    addChatMessageToModal('⚠️ Переподключить может только звонящий', true);
-                }
-            } else {
-                // Всё ок, просто статус поменяем
-                statusDiv.innerText = '✅ Подключено';
-                setTimeout(() => { 
-                    if (currentCall) statusDiv.innerText = '🟢 В эфире'; 
-                }, 2000);
+                peer.on('open', function(id) {
+                    log('ID получен: ' + id, 'success');
+                    myIdInput.value = id;
+                    statusMessage.textContent = '✅ Готово! Скопируйте ваш ID и отправьте другу.';
+                    statusMessage.className = 'text-center text-sm text-emerald-400 font-medium';
+                });
+
+                peer.on('call', function(call) {
+                    log('Входящий звонок от: ' + call.peer, 'info');
+                    if (confirm('Входящий звонок. Принять?')) {
+                        answerCall(call);
+                    } else {
+                        call.close();
+                        log('Звонок отклонён', 'info');
+                    }
+                });
+
+                peer.on('error', function(err) {
+                    log('Ошибка PeerJS: ' + err.type + ' - ' + err.message, 'error');
+                    statusMessage.textContent = '❌ Ошибка: ' + err.type;
+                    statusMessage.className = 'text-center text-sm text-red-400';
+                    
+                    if (err.type === 'unavailable-id') {
+                        log('ID уже используется. Попробуйте обновить страницу.', 'error');
+                    } else if (err.type === 'network') {
+                        log('Сетевая ошибка. Проверьте подключение к серверу.', 'error');
+                        log('Откройте https://peerjs-server-n709.onrender.com чтобы "разбудить" сервер', 'info');
+                    }
+                });
+
+                peer.on('disconnected', function() {
+                    log('Отключено от сервера. Переподключение...', 'error');
+                    peer.reconnect();
+                });
+
+                peer.on('connection', function(conn) {
+                    log('Установлено соединение с: ' + conn.peer, 'success');
+                });
+
+            } catch (e) {
+                log('Критическая ошибка: ' + e.message, 'error');
+                statusMessage.textContent = '❌ Ошибка инициализации: ' + e.message;
             }
-        } else {
-            // Если звонка нет, просто логируем
-            log('Нет активного звонка для переподключения', 'info');
-            statusDiv.innerText = '⚠️ Нет активного соединения';
-            setTimeout(() => { 
-                statusDiv.innerText = 'Вы не подключены. Нажмите "Переподключить".'; 
-            }, 2000);
         }
-    }
 
-    // ============================================
-    // ЛОГИРОВАНИЕ
-    // ============================================
-    function log(msg, type = 'info') {
-        debugLog.classList.remove('hidden');
-        const p = document.createElement('p');
-        p.className = type === 'error' ? 'text-red-400' : (type === 'success' ? 'text-green-400' : 'text-blue-300');
-        p.innerHTML = `[${new Date().toLocaleTimeString()}] ${msg}`;
-        debugLog.appendChild(p);
-        debugLog.scrollTop = debugLog.scrollHeight;
-        console.log(`[${type}] ${msg}`);
-    }
+        async function requestCamera() {
+            try {
+                log('Запрос доступа к камере и микрофону...', 'info');
+                statusMessage.textContent = 'Запрос доступа к камере...';
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: true, 
+                    audio: true 
+                });
+                hasVideo = true;
+                localVideo.srcObject = localStream;
+                localVideo.classList.remove('hidden');
+                audioOnlyPlaceholder.classList.add('hidden');
+                camBtn.classList.remove('hidden');
+                log('Камера и микрофон подключены', 'success');
+                statusMessage.textContent = '✅ Камера и микрофон подключены';
+                statusMessage.className = 'text-center text-sm text-emerald-400';
+                return true;
+            } catch (err) {
+                log('Ошибка камеры: ' + err.message, 'error');
+                statusMessage.textContent = '⚠️ Камера недоступна. Попробуйте "Только микрофон"';
+                statusMessage.className = 'text-center text-sm text-yellow-400';
+                return requestAudioOnly();
+            }
+        }
 
-    // ============================================
-    // ВОЛНЫ
-    // ============================================
-    let wavePoints = [];
-    let wavePhase = 0;
-    let waveSpeed = 0.006;
-    
-    function initWaves() {
-        if (!wavesCanvas) return;
-        const rect = wavesCanvas.parentElement.getBoundingClientRect();
-        wavesCanvas.width = rect.width;
-        wavesCanvas.height = rect.height;
-        const width = wavesCanvas.width;
-        const height = wavesCanvas.height;
-        
-        const perimeterPoints = [];
-        const numPoints = 40;
-        for (let i = 0; i < numPoints; i++) {
-            let t = i / numPoints;
-            let x, y;
-            if (t < 0.25) { x = t * 4; y = 0; }
-            else if (t < 0.5) { x = 1; y = (t - 0.25) * 4; }
-            else if (t < 0.75) { x = 1 - (t - 0.5) * 4; y = 1; }
-            else { x = 0; y = 1 - (t - 0.75) * 4; }
-            perimeterPoints.push({ x: x * width, y: y * height });
+        async function requestAudioOnly() {
+            try {
+                log('Запрос доступа к микрофону...', 'info');
+                statusMessage.textContent = 'Запрос доступа к микрофону...';
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: false, 
+                    audio: true 
+                });
+                hasVideo = false;
+                localVideo.classList.add('hidden');
+                audioOnlyPlaceholder.classList.remove('hidden');
+                camBtn.classList.add('hidden');
+                log('Микрофон подключен', 'success');
+                statusMessage.textContent = '✅ Микрофон подключен (аудиозвонок)';
+                statusMessage.className = 'text-center text-sm text-emerald-400';
+                return true;
+            } catch (err) {
+                log('Ошибка микрофона: ' + err.message, 'error');
+                statusMessage.textContent = '❌ Микрофон недоступен. Проверьте разрешения.';
+                statusMessage.className = 'text-center text-sm text-red-400';
+                return false;
+            }
         }
-        
-        wavePoints = [];
-        for (let layer = 0; layer < 3; layer++) {
-            let points = perimeterPoints.map(p => ({
-                origX: p.x, origY: p.y,
-                amp: 2 + layer * 1.5
-            }));
-            wavePoints.push(points);
-        }
-        
-        function drawWaves() {
-            if (!wavesCanvas || wavesCanvas.style.display === 'none' || !wavesCanvas.parentElement) {
-                if (waveAnimationFrame) cancelAnimationFrame(waveAnimationFrame);
+
+        function startCall() {
+            const remoteId = remoteIdInput.value.trim();
+            if (!remoteId) {
+                alert('Введите ID собеседника');
                 return;
             }
-            const newRect = wavesCanvas.parentElement.getBoundingClientRect();
-            if (Math.abs(wavesCanvas.width - newRect.width) > 1 || Math.abs(wavesCanvas.height - newRect.height) > 1) {
-                wavesCanvas.width = newRect.width;
-                wavesCanvas.height = newRect.height;
-                initWaves();
+            if (!localStream) {
+                alert('Сначала нажмите "Видео + Микрофон" или "Только микрофон"!');
+                return;
+            }
+            if (!peer) {
+                alert('PeerJS не инициализирован. Обновите страницу.');
+                return;
+            }
+
+            log('Начало звонка на: ' + remoteId, 'info');
+            statusMessage.textContent = 'Установка соединения...';
+            callingOverlay.classList.remove('hidden');
+            videoContainer.classList.remove('hidden');
+            controls.classList.remove('hidden');
+
+            currentCall = peer.call(remoteId, localStream);
+            handleCall(currentCall);
+        }
+
+        function answerCall(call) {
+            log('Ответ на звонок от: ' + call.peer, 'info');
+            if (!localStream) {
+                requestAudioOnly().then(function() {
+                    if(localStream) {
+                        videoContainer.classList.remove('hidden');
+                        controls.classList.remove('hidden');
+                        currentCall = call;
+                        call.answer(localStream);
+                        handleCall(call);
+                    }
+                });
                 return;
             }
             
-            const ctx = wavesCanvas.getContext('2d');
-            ctx.clearRect(0, 0, wavesCanvas.width, wavesCanvas.height);
-            wavePhase += waveSpeed;
-            for (let layer = 0; layer < wavePoints.length; layer++) {
-                const points = wavePoints[layer];
-                ctx.beginPath();
-                ctx.strokeStyle = `rgba(96, 165, 250, ${0.12 + layer * 0.08})`;
-                ctx.lineWidth = 1.5 + layer * 0.5;
-                for (let i = 0; i < points.length; i++) {
-                    const p = points[i];
-                    const angle = wavePhase * (0.8 + layer * 0.15) + i * 0.25;
-                    const offsetX = Math.sin(angle) * p.amp * 0.6;
-                    const offsetY = Math.cos(angle * 0.6) * p.amp * 0.4;
-                    const x = p.origX + offsetX;
-                    const y = p.origY + offsetY;
-                    if (i === 0) ctx.moveTo(x, y);
-                    else ctx.lineTo(x, y);
-                }
-                ctx.stroke();
-                const first = points[0];
-                ctx.lineTo(first.origX + Math.sin(wavePhase * 0.6) * first.amp * 0.5, 
-                           first.origY + Math.cos(wavePhase * 0.5) * first.amp * 0.4);
-                ctx.stroke();
-            }
-            waveAnimationFrame = requestAnimationFrame(drawWaves);
-        }
-        
-        if (waveAnimationFrame) cancelAnimationFrame(waveAnimationFrame);
-        drawWaves();
-    }
-    
-    function stopWaves() {
-        if (waveAnimationFrame) cancelAnimationFrame(waveAnimationFrame);
-        if (wavesCanvas) {
-            const ctx = wavesCanvas.getContext('2d');
-            ctx.clearRect(0, 0, wavesCanvas.width, wavesCanvas.height);
-        }
-    }
-    
-    function resizeCanvas() {
-        if (!wavesCanvas || wavesCanvas.style.display === 'none') return;
-        const rect = wavesCanvas.parentElement.getBoundingClientRect();
-        wavesCanvas.width = rect.width;
-        wavesCanvas.height = rect.height;
-        initWaves();
-    }
-
-    // ============================================
-    // ЧАТ (ЛОГИКА ИНИЦИАТОРА)
-    // ============================================
-    function updateChatStatusIndicator() {
-        if (chatStatusIndicator) {
-            if (dataConnection && dataConnection.open) {
-                chatStatusIndicator.innerHTML = '🟢';
-                chatStatusIndicator.title = 'Чат активен';
-            } else {
-                chatStatusIndicator.innerHTML = '🔴';
-                chatStatusIndicator.title = 'Чат не подключён';
-            }
-        }
-    }
-    
-    function toggleChatModal() {
-        if (chatModal.classList.contains('hidden')) {
-            chatModal.classList.remove('hidden');
-            chatModalInput.focus();
-            updateChatStatusIndicator();
-            if (!dataConnection || dataConnection.open === false) {
-                addChatMessageToModal('⚠️ Чат не подключён. Нажмите "Переподключить".', false);
-                if (remotePeerId && currentCall && isCallInitiator) {
-                    reconnectChat();
-                }
-            } else {
-                addChatMessageToModal('📡 Чат активен', false);
-            }
-        } else {
-            chatModal.classList.add('hidden');
-        }
-    }
-
-    function addChatMessageToModal(text, isOwn = false) {
-        if (chatModalMessages.children.length === 1 && chatModalMessages.children[0].innerText.includes('Нет сообщений')) {
-            chatModalMessages.innerHTML = '';
-        }
-        const div = document.createElement('div');
-        div.className = `chat-message ${isOwn ? 'own' : 'other'}`;
-        div.innerText = text;
-        chatModalMessages.appendChild(div);
-        chatModalMessages.scrollTop = chatModalMessages.scrollHeight;
-        updateChatStatusIndicator();
-    }
-
-    function sendChatMessageModal() {
-        const txt = chatModalInput.value.trim();
-        if (!txt) return;
-        if (!dataConnection || dataConnection.open === false) {
-            log('Чат не подключён.', 'error');
-            addChatMessageToModal('⚠️ Нет соединения', true);
-            return;
-        }
-        try {
-            dataConnection.send({ type: 'chat', message: txt });
-            addChatMessageToModal(txt, true);
-            chatModalInput.value = '';
-            log('Сообщение отправлено', 'success');
-        } catch (err) {
-            log('Ошибка отправки: ' + err.message, 'error');
-            addChatMessageToModal('❌ Ошибка отправки', true);
-        }
-    }
-
-    function setupDataConnection(conn, isInitiator = false) {
-        if (dataConnection === conn && dataConnection && dataConnection.open) return;
-        if (dataConnection) { try { dataConnection.close(); } catch(e) {} }
-        dataConnection = conn;
-        
-        dataConnection.on('open', () => {
-            log('✅ Чат соединение открыто', 'success');
-            addChatMessageToModal(' Чат подключён', false);
-            isConnectingChat = false;
-            if (chatRetryTimer) { clearTimeout(chatRetryTimer); chatRetryTimer = null; }
-            chatRetryAttempts = 0;
-            updateChatStatusIndicator();
-        });
-        
-        dataConnection.on('data', (d) => {
-            if (d && d.type === 'chat') {
-                addChatMessageToModal(d.message, false);
-                log('Получено сообщение', 'info');
-            }
-        });
-        
-        dataConnection.on('close', () => {
-            log('Чат закрыт', 'info');
-            if (dataConnection === conn) dataConnection = null;
-            addChatMessageToModal('⚠️ Чат отключён', false);
-            updateChatStatusIndicator();
-            if (remotePeerId && currentCall && isCallInitiator) {
-                scheduleChatReconnect();
-            }
-        });
-        
-        dataConnection.on('error', (err) => {
-            log('Ошибка чата: ' + err, 'error');
-            addChatMessageToModal('❌ Ошибка соединения', false);
-            updateChatStatusIndicator();
-            if (isCallInitiator) {
-                scheduleChatReconnect();
-            }
-        });
-        
-        if (conn.open) {
-            addChatMessageToModal('📡 Чат готов', false);
-            isConnectingChat = false;
-            if (chatRetryTimer) clearTimeout(chatRetryTimer);
-            updateChatStatusIndicator();
-        } else if (isInitiator) {
-            scheduleChatReconnect();
-        }
-    }
-    
-    function scheduleChatReconnect() {
-        if (!remotePeerId || !currentCall) return;
-        if (isConnectingChat) return;
-        if (chatRetryTimer) clearTimeout(chatRetryTimer);
-        const delay = Math.min(5000, 500 * Math.pow(1.5, chatRetryAttempts));
-        chatRetryAttempts++;
-        log(`Повторная попытка чата через ${delay/1000}с (попытка ${chatRetryAttempts})`, 'info');
-        chatRetryTimer = setTimeout(() => {
-            if (remotePeerId && currentCall && (!dataConnection || !dataConnection.open)) {
-                createChatConnection();
-            }
-            chatRetryTimer = null;
-        }, delay);
-    }
-    
-    function createChatConnection() {
-        if (!remotePeerId) return;
-        if (isConnectingChat) return;
-        isConnectingChat = true;
-        log('Создание чат-соединения...', 'info');
-        try {
-            const conn = peer.connect(remotePeerId, { 
-                label: 'chat', 
-                reliable: true,
-                serialization: 'json'
-            });
-            setupDataConnection(conn, true);
-        } catch(err) {
-            log('Ошибка создания чата: ' + err.message, 'error');
-            isConnectingChat = false;
-            scheduleChatReconnect();
-        }
-    }
-    
-    function reconnectChat() {
-        if (!remotePeerId) {
-            addChatMessageToModal('❌ Нет активного собеседника', true);
-            return;
-        }
-        if (!isCallInitiator) {
-            addChatMessageToModal('⚠️ Переподключить может только звонящий', true);
-            return;
-        }
-        if (dataConnection) { try { dataConnection.close(); } catch(e) {} dataConnection = null; }
-        isConnectingChat = false;
-        chatRetryAttempts = 0;
-        if (chatRetryTimer) clearTimeout(chatRetryTimer);
-        addChatMessageToModal('🔄 Переподключение...', true);
-        createChatConnection();
-    }
-
-    // ============================================
-    // ЗВОНОК
-    // ============================================
-    function playRingtone() {
-        stopRingtone();
-        try {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            if (ctx.state === 'suspended') ctx.resume();
-            const playBeep = (freq, duration, delay = 0) => {
-                const now = ctx.currentTime + delay;
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.connect(gain); gain.connect(ctx.destination);
-                osc.frequency.value = freq; gain.gain.value = 0.25;
-                osc.start(now); gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-                osc.stop(now + duration);
-            };
-            const ringPattern = () => { playBeep(800, 0.35); playBeep(1000, 0.35, 0.45); };
-            ringPattern();
-            ringInterval = setInterval(() => { if (ctx.state !== 'closed') ringPattern(); }, 2000);
-            window._ringCtx = ctx;
-        } catch(e) { log('Звук звонка не поддерживается', 'error'); }
-    }
-    
-    function stopRingtone() { 
-        if (ringInterval) clearInterval(ringInterval); 
-        if (window._ringCtx) window._ringCtx.close().catch(()=>{}); 
-        window._ringCtx = null; 
-    }
-
-    // ============================================
-    // ЭКРАН
-    // ============================================
-    function isScreenShareSupported() { return !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia); }
-    function updateScreenButtonVisibility() {
-        if (!controlsDiv.classList.contains('hidden') && hasVideo && !screenSharingActive && isScreenShareSupported()) {
-            screenBtn.classList.remove('hidden');
-        } else {
-            screenBtn.classList.add('hidden');
-        }
-    }
-    
-    async function toggleScreenShare() {
-        if (!currentCall) { log('Нет активного звонка', 'error'); return; }
-        if (!localStream) { log('Нет медиапотока', 'error'); return; }
-        if (!hasVideo) { log('Включите камеру', 'error'); return; }
-        if (!isScreenShareSupported()) { log('Браузер не поддерживает демонстрацию экрана', 'error'); return; }
-        if (screenSharingActive) await stopScreenShare();
-        else await startScreenShare();
-    }
-    
-    async function startScreenShare() {
-        try {
-            const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-            const screenTrack = screenStream.getVideoTracks()[0];
-            if (!screenTrack) throw new Error('Нет видео с экрана');
-            let videoSender = null;
-            for (let i = 0; i < 20; i++) { 
-                const pc = currentCall.peerConnection; 
-                if (pc) videoSender = pc.getSenders().find(s => s.track && s.track.kind === 'video'); 
-                if (videoSender) break; 
-                await new Promise(r => setTimeout(r, 200)); 
-            }
-            if (!videoSender) throw new Error('Видеосендер не найден');
-            if (!originalVideoTrack && localStream.getVideoTracks()[0]) {
-                originalVideoTrack = localStream.getVideoTracks()[0];
-            }
-            await videoSender.replaceTrack(screenTrack);
-            localStream.getVideoTracks().forEach(t => { 
-                if (t !== screenTrack) { t.stop(); localStream.removeTrack(t); } 
-            });
-            localStream.addTrack(screenTrack);
-            localVideo.srcObject = localStream;
-            localVideo.classList.remove('hidden');
-            wavesCanvas.style.display = 'none';
-            audioOnlyPlaceholder.classList.add('hidden');
-            screenSharingActive = true;
-            screenBtn.classList.add('bg-emerald-600');
-            log('Демонстрация экрана активна', 'success');
-            screenTrack.onended = () => { if (screenSharingActive) stopScreenShare(); };
-        } catch (err) { log('Ошибка экрана: ' + err.message, 'error'); }
-    }
-    
-    async function stopScreenShare() {
-        if (!screenSharingActive) return;
-        try {
-            const pc = currentCall.peerConnection;
-            const videoSender = pc?.getSenders().find(s => s.track?.kind === 'video');
-            if (!videoSender) throw new Error('Нет видеосендера');
-            let restoreTrack = null;
-            if (originalVideoTrack && originalVideoTrack.readyState === 'live') {
-                restoreTrack = originalVideoTrack;
-            } else if (localStream.getVideoTracks().length > 0 && localStream.getVideoTracks()[0].readyState === 'live') {
-                restoreTrack = localStream.getVideoTracks()[0];
-            } else { 
-                const newCam = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }); 
-                restoreTrack = newCam.getVideoTracks()[0]; 
-                localStream.addTrack(restoreTrack); 
-                originalVideoTrack = restoreTrack; 
-            }
-            if (restoreTrack) {
-                await videoSender.replaceTrack(restoreTrack);
-                localStream.getVideoTracks().forEach(t => { 
-                    if (t !== restoreTrack) { t.stop(); localStream.removeTrack(t); } 
-                });
-                localVideo.srcObject = localStream;
-                if (isCamMuted) restoreTrack.enabled = false;
-            }
-            screenSharingActive = false;
-            screenBtn.classList.remove('bg-emerald-600');
-            if (!hasVideo || isCamMuted) { wavesCanvas.style.display = 'block'; localVideo.classList.add('hidden'); } 
-            else { wavesCanvas.style.display = 'none'; localVideo.classList.remove('hidden'); }
-            updateScreenButtonVisibility();
-            log('Экран выключен', 'success');
-        } catch(e) { log('Ошибка остановки экрана: ' + e.message, 'error'); }
-    }
-
-    // ============================================
-    // МЕДИА
-    // ============================================
-    async function requestCamera() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            if (localStream) localStream.getTracks().forEach(t => t.stop());
-            localStream = stream; 
-            hasVideo = true;
-            localVideo.srcObject = stream; 
-            localVideo.classList.remove('hidden');
-            wavesCanvas.style.display = 'none'; 
-            audioOnlyPlaceholder.classList.add('hidden');
-            document.getElementById('camBtn').classList.remove('hidden');
-            originalVideoTrack = stream.getVideoTracks()[0];
-            updateScreenButtonVisibility();
-            log('Камера + микрофон готовы', 'success');
-            statusDiv.innerText = '✅ Готово к звонку';
-            return true;
-        } catch(e) { 
-            log('Камера недоступна: ' + e.message, 'error');
-            return requestAudioOnly(); 
-        }
-    }
-    
-    async function requestAudioOnly() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-            if (localStream) localStream.getTracks().forEach(t => t.stop());
-            localStream = stream; 
-            hasVideo = false;
-            localVideo.classList.add('hidden'); 
-            wavesCanvas.style.display = 'block';
-            audioOnlyPlaceholder.classList.add('hidden');
-            document.getElementById('camBtn').classList.add('hidden');
-            updateScreenButtonVisibility();
-            log('Микрофон готов (аудиорежим)', 'success');
-            statusDiv.innerText = '🎙 Аудиорежим';
-            initWaves();
-            return true;
-        } catch(e) { 
-            log('Нет доступа к микрофону: ' + e.message, 'error'); 
-            return false; 
-        }
-    }
-
-    // ============================================
-    // PEERJS ИНИЦИАЛИЗАЦИЯ
-    // ============================================
-    function initPeer() {
-        log('Подключение к серверу 0.peerjs.com...', 'info');
-        serverStatus.textContent = '⏳';
-        
-        peer = new Peer({
-            host: '193.160.208.198',
-            port: 10000,
-            secure: true,
-            path: '/',
-            debug: 3,
-            config: {
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun.cloudflare.com:3478' }
-                ]
-            }
-        });
-
-        peer.on('open', id => {
-            myIdInput.value = id;
-            statusDiv.innerText = '✅ Готово к звонку';
-            serverStatus.textContent = '🟢 Online';
-            log(`✅ Ваш ID: ${id}`, 'success');
-        });
-
-        peer.on('call', call => { 
-            log(`📞 Входящий звонок от: ${call.peer}`, 'info');
-            playRingtone(); 
-            if (confirm('Входящий звонок. Принять?')) { 
-                stopRingtone(); 
-                remotePeerId = call.peer;
-                answerCall(call); 
-            } else { 
-                stopRingtone(); 
-                call.close(); 
-                log('Звонок отклонён', 'info');
-            } 
-        });
-
-        peer.on('connection', conn => {
-            log(` Входящее соединение чата от ${conn.peer}`, 'info');
-            if (remotePeerId === conn.peer && currentCall) {
-                setupDataConnection(conn, false);
-                log('Принято входящее чат-соединение', 'success');
-            } else if (!dataConnection && currentCall && conn.peer === remotePeerId) {
-                setupDataConnection(conn, false);
-            } else {
-                log('Чат отклонён (нет активного звонка с этим peer)', 'info');
-                conn.close();
-            }
-        });
-
-        peer.on('error', err => {
-            log(`❌ Peer ошибка: ${err.type} - ${err.message}`, 'error');
-            if (err.type === 'network' || err.type === 'server-error') {
-                serverStatus.textContent = '🔴 Offline';
-                statusDiv.innerText = '❌ Нет связи с сервером';
-            } else if (err.type === 'unavailable-id') {
-                log('ID уже используется, генерируем новый...', 'info');
-                peer.destroy();
-                setTimeout(initPeer, 1000);
-            } else if (err.type === 'peer-unavailable') {
-                log('Собеседник не найден. Проверьте ID.', 'error');
-                statusDiv.innerText = '❌ Собеседник не найден';
-                endCallUI();
-            } else if (err.type === 'disconnected') {
-                log('Потеряно соединение. Переподключение...', 'error');
-                serverStatus.textContent = '⏳';
-                peer.reconnect();
-            }
-        });
-
-        peer.on('disconnected', () => {
-            log('Отключено от сервера. Переподключение...', 'error');
-            serverStatus.textContent = '⏳';
-            setTimeout(() => {
-                if (peer && !peer.destroyed) {
-                    try { peer.reconnect(); } catch(e) { log('Ошибка переподключения: ' + e.message, 'error'); }
-                }
-            }, 3000);
-        });
-    }
-
-    // ============================================
-    // ЗВОНКИ (ИНИЦИАТОР ЧАТА)
-    // ============================================
-    function startCall() {
-        const rid = remoteIdInput.value.trim();
-        if (!rid) return alert('Введите ID собеседника');
-        if (!localStream) return alert('Сначала разрешите доступ к микрофону/камере');
-        if (!peer || peer.destroyed) return alert('Сервер не подключён. Обновите страницу.');
-        
-        remotePeerId = rid;
-        isCallInitiator = true; // МЫ ЗВОНИМ
-        videoContainer.style.display = 'block'; 
-        controlsDiv.classList.remove('hidden'); 
-        callingOverlay.classList.remove('hidden');
-        statusDiv.innerText = '📞 Звонок...';
-        
-        currentCall = peer.call(rid, localStream);
-        handleCall(currentCall);
-        createChatConnection(); // ИНИЦИАТОР СОЗДАЁТ ЧАТ
-        updateScreenButtonVisibility();
-        log(` Исходящий звонок на ${rid}`, 'info');
-    }
-
-    function answerCall(call) {
-        remotePeerId = call.peer;
-        isCallInitiator = false; // МЫ ОТВЕЧАЕМ
-        
-        if (!localStream) {
-            requestAudioOnly().then(() => {
-                if (localStream) {
-                    call.answer(localStream);
-                    videoContainer.style.display = 'block'; 
-                    controlsDiv.classList.remove('hidden');
-                    currentCall = call; 
-                    handleCall(call);
-                    log('✅ Входящий звонок принят (аудио). Ждём чат-соединение...', 'success');
-                    updateScreenButtonVisibility();
-                }
-            });
-        } else {
+            videoContainer.classList.remove('hidden');
+            controls.classList.remove('hidden');
+            currentCall = call;
             call.answer(localStream);
-            videoContainer.style.display = 'block'; 
-            controlsDiv.classList.remove('hidden');
-            currentCall = call; 
             handleCall(call);
-            log('✅ Входящий звонок принят. Ждём чат-соединение...', 'success');
-            updateScreenButtonVisibility();
         }
-    }
 
-    function handleCall(call) {
-        call.on('stream', remoteStream => {
-            log('📺 Получен видеопоток', 'success');
-            remoteVideo.srcObject = remoteStream;
-            callingOverlay.classList.add('hidden');
-            statusDiv.innerText = '🟢 В эфире';
-            if (remoteStream.getVideoTracks().length === 0 || 
-                remoteStream.getVideoTracks()[0].readyState === 'ended') {
-                wavesCanvas.style.display = 'block';
-                initWaves();
-            } else {
-                wavesCanvas.style.display = 'none';
-                stopWaves();
+        function handleCall(call) {
+            call.on('stream', function(remoteStream) {
+                log('Получен видеопоток от собеседника', 'success');
+                remoteVideo.srcObject = remoteStream;
+                callingOverlay.classList.add('hidden');
+                statusMessage.textContent = '🟢 Звонок активен';
+                statusMessage.className = 'text-center text-sm text-emerald-400 font-bold';
+            });
+
+            call.on('close', function() { 
+                log('Звонок завершён', 'info');
+                endCallUI(); 
+            });
+            
+            call.on('error', function(err) {
+                log('Ошибка звонка: ' + err, 'error');
+                endCallUI();
+            });
+        }
+
+        function endCall() {
+            log('Завершение звонка', 'info');
+            if (currentCall) {
+                currentCall.close();
+                currentCall = null;
             }
-        });
-        
-        call.on('close', () => {
-            log(' Звонок завершён', 'info');
             endCallUI();
-        });
-        
-        call.on('error', (err) => {
-            log('❌ Ошибка звонка: ' + err, 'error');
-            endCallUI();
-        });
-    }
-
-    function endCall() { 
-        log('Завершение звонка...', 'info');
-        if (currentCall) { try { currentCall.close(); } catch(e) {} }
-        if (dataConnection) { try { dataConnection.close(); } catch(e) {} }
-        endCallUI(); 
-    }
-    
-    function endCallUI() {
-        remoteVideo.srcObject = null; 
-        videoContainer.style.display = 'none'; 
-        controlsDiv.classList.add('hidden');
-        callingOverlay.classList.add('hidden');
-        chatModal.classList.add('hidden');
-        chatModalMessages.innerHTML = '<div class="text-center text-xs text-slate-500 p-3">Нет сообщений</div>';
-        statusDiv.innerText = 'Вы не подключены. Нажмите "Переподключить".';
-        
-        if (!hasVideo) {
-            wavesCanvas.style.display = 'block';
-            initWaves();
-        } else {
-            wavesCanvas.style.display = 'none';
-            stopWaves();
         }
-        
-        stopRingtone(); 
-        currentCall = null; 
-        isCallInitiator = false;
-        if (dataConnection) { try { dataConnection.close(); } catch(e) {} dataConnection = null; }
-        if (chatRetryTimer) { clearTimeout(chatRetryTimer); chatRetryTimer = null; }
-        isConnectingChat = false;
-        chatRetryAttempts = 0;
-        screenSharingActive = false;
-        screenBtn.classList.remove('bg-emerald-600'); 
-        updateScreenButtonVisibility();
-        remotePeerId = null;
-        updateChatStatusIndicator();
-    }
 
-    // ============================================
-    // УПРАВЛЕНИЕ
-    // ============================================
-    function toggleMic() {
-        if (!localStream) return;
-        isMicMuted = !isMicMuted;
-        localStream.getAudioTracks().forEach(t => t.enabled = !isMicMuted);
-        const btn = document.getElementById('micBtn');
-        btn.textContent = isMicMuted ? '🔇' : '🎤';
-        btn.classList.toggle('bg-red-600', isMicMuted);
-        log(isMicMuted ? 'Микрофон выключен' : 'Микрофон включён', 'info');
-    }
-    
-    function toggleCamera() {
-        if (!localStream || !hasVideo || screenSharingActive) return;
-        isCamMuted = !isCamMuted;
-        localStream.getVideoTracks().forEach(t => t.enabled = !isCamMuted);
-        const btn = document.getElementById('camBtn');
-        btn.textContent = isCamMuted ? '❌' : '📷';
-        btn.classList.toggle('bg-red-600', isCamMuted);
-        if (isCamMuted) { wavesCanvas.style.display = 'block'; localVideo.classList.add('hidden'); initWaves(); } 
-        else { wavesCanvas.style.display = 'none'; localVideo.classList.remove('hidden'); stopWaves(); }
-        updateScreenButtonVisibility();
-        log(isCamMuted ? 'Камера выключена' : 'Камера включена', 'info');
-    }
-    
-    function copyId() {
-        const id = myIdInput.value;
-        if (id && id !== 'Подключение...' && id !== 'Подключение...') {
-            navigator.clipboard.writeText(id).then(() => {
-                log('✅ ID скопирован', 'success');
-                const orig = statusDiv.innerText;
-                statusDiv.innerText = '✅ ID скопирован!';
-                setTimeout(() => { statusDiv.innerText = orig; }, 2000);
-            }).catch(() => {
-                myIdInput.select();
-                document.execCommand('copy');
-                log('✅ ID скопирован', 'success');
-            });
+        function endCallUI() {
+            remoteVideo.srcObject = null;
+            videoContainer.classList.add('hidden');
+            controls.classList.add('hidden');
+            callingOverlay.classList.add('hidden');
+            statusMessage.textContent = 'Звонок завершен';
+            statusMessage.className = 'text-center text-sm text-slate-400';
+            remoteIdInput.value = '';
         }
-    }
 
-    // ============================================
-    // ПЕРЕТАСКИВАНИЕ ЧАТА
-    // ============================================
-    let isDragging = false;
-    let dragOffsetX = 0, dragOffsetY = 0;
-    
-    function initDrag() {
-        const header = document.getElementById('chatModalHeader');
-        if (!header) return;
-        header.addEventListener('mousedown', (e) => {
-            if (e.target.closest('.reconnect-chat-btn') || e.target.closest('.close-chat')) return;
-            isDragging = true;
-            const rect = chatModal.getBoundingClientRect();
-            dragOffsetX = e.clientX - rect.left;
-            dragOffsetY = e.clientY - rect.top;
-            chatModal.style.transition = 'none';
-            document.body.style.userSelect = 'none';
-            e.preventDefault();
-        });
-        document.addEventListener('mousemove', (e) => {
-            if (!isDragging) return;
-            let left = e.clientX - dragOffsetX;
-            let top = e.clientY - dragOffsetY;
-            left = Math.min(window.innerWidth - chatModal.offsetWidth, Math.max(0, left));
-            top = Math.min(window.innerHeight - 50, Math.max(0, top));
-            chatModal.style.left = left + 'px';
-            chatModal.style.right = 'auto';
-            chatModal.style.bottom = 'auto';
-            chatModal.style.top = top + 'px';
-        });
-        document.addEventListener('mouseup', () => {
-            isDragging = false;
-            document.body.style.userSelect = '';
-            chatModal.style.transition = '';
-        });
-    }
+        function toggleMic() {
+            if (!localStream) return;
+            isMicMuted = !isMicMuted;
+            localStream.getAudioTracks().forEach(function(track) { track.enabled = !isMicMuted; });
+            const btn = document.getElementById('micBtn');
+            btn.textContent = isMicMuted ? '🔇' : '🎤';
+            btn.classList.toggle('bg-red-600', isMicMuted);
+            btn.classList.toggle('bg-slate-700', !isMicMuted);
+            log(isMicMuted ? 'Микрофон выключен' : 'Микрофон включён', 'info');
+        }
 
-    // ============================================
-    // ЗАГРУЗКА
-    // ============================================
-    window.addEventListener('load', () => { 
-        initPeer(); 
-        requestCamera().then(() => {
-            initWaves();
-            window.addEventListener('resize', () => { 
-                if (wavesCanvas && wavesCanvas.style.display !== 'none') {
-                    resizeCanvas(); 
-                }
-            });
+        function toggleCamera() {
+            if (!localStream || !hasVideo) return;
+            isCamMuted = !isCamMuted;
+            localStream.getVideoTracks().forEach(function(track) { track.enabled = !isCamMuted; });
+            const btn = document.getElementById('camBtn');
+            btn.textContent = isCamMuted ? '📷' : '';
+            btn.classList.toggle('bg-red-600', isCamMuted);
+            btn.classList.toggle('bg-slate-700', !isCamMuted);
+            localVideo.classList.toggle('hidden', isCamMuted);
+            audioOnlyPlaceholder.classList.toggle('hidden', !isCamMuted);
+            log(isCamMuted ? 'Камера выключена' : 'Камера включена', 'info');
+        }
+
+        function copyId() {
+            const id = myIdInput.value;
+            if (id && id !== 'Загрузка...') {
+                navigator.clipboard.writeText(id).then(function() {
+                    log('ID скопирован', 'success');
+                    const orig = statusMessage.textContent;
+                    statusMessage.textContent = '✅ ID скопирован!';
+                    setTimeout(function() { statusMessage.textContent = orig; }, 2000);
+                });
+            }
+        }
+
+        window.addEventListener('load', function() {
+            log('Страница загружена', 'info');
+            initPeer();
+            requestCamera();
         });
-        initDrag();
-    });
-    
-    window.addEventListener('beforeunload', () => { 
-        if (localStream) localStream.getTracks().forEach(t => t.stop()); 
-        if (peer) peer.destroy(); 
-        stopWaves(); 
-        stopRingtone(); 
-    });
 
-    // Специальный обработчик для кнопки переподключения в статус-блоке
-    document.getElementById('reconnectButton').addEventListener('click', function(e) {
-        e.preventDefault();
-        manualReconnect();
-    });
-
-</script>
+        window.addEventListener('beforeunload', function() {
+            if (localStream) localStream.getTracks().forEach(function(t) { t.stop(); });
+            if (peer) peer.destroy();
+        });
+    </script>
 </body>
 </html>
+
